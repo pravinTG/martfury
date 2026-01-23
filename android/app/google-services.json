@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "253730405721",
+    "project_id": "goodiesworld-cae77",
+    "storage_bucket": "goodiesworld-cae77.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:253730405721:android:b0be849449cb396c6e6048",
+        "android_client_info": {
+          "package_name": "in.techgigs.goodiesworld"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAvBPJQouMdXGZ9ZQyc4q7DgQmVV0Haw04"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'firebase_options.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/info_screen.dart';
@@ -8,8 +11,33 @@ import 'screens/sign_up_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/new_password_screen.dart';
 import 'screens/category_screen.dart';
+import 'screens/phone_login_screen.dart';
+import 'screens/verify_otp_screen.dart';
+import 'screens/homepage_screen.dart';
+import 'screens/main_tabs_screen.dart';
+import 'screens/product_detail_screen.dart';
+import 'services/auth_service.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Select env file based on APP_ENV dart-define (dev/prod)
+  const env = String.fromEnvironment('APP_ENV', defaultValue: 'prod');
+  final envFile = env.toLowerCase() == 'prod' ? '.env.prod' : '.env.dev';
+
+  try {
+    await dotenv.load(fileName: envFile);
+    print('✅ Loaded environment file: $envFile');
+    print('✅ BASE_URL: ${dotenv.env['BASE_URL']}');
+  } catch (e) {
+    print('⚠️ Failed to load $envFile: $e');
+    print('⚠️ Using default values');
+    // Continue with defaults - ApiService has fallback values
+  }
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MartfuryApp());
 }
 
@@ -18,15 +46,28 @@ class MartfuryApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final authService = AuthService();
+    
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Martfury',
+      title: 'Goodies World',
       theme: AppTheme.lightTheme,
       initialRoute: SplashScreen.routeName,
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case SplashScreen.routeName:
             return _fadeRoute(const SplashScreen(), settings);
+          case PhoneLoginScreen.routeName:
+            return _slideRoute(const PhoneLoginScreen(), settings);
+          case VerifyOTPScreen.routeName:
+            return _slideRoute(
+              const VerifyOTPScreen(),
+              settings,
+            );
+          case HomepageScreen.routeName:
+            return _fadeRoute(const HomepageScreen(), settings);
+          case MainTabsScreen.routeName:
+            return _fadeRoute(const MainTabsScreen(), settings);
           case InfoScreen.routeName:
             return _fadeRoute(const InfoScreen(), settings);
           case OnboardingScreen.routeName:
@@ -41,6 +82,13 @@ class MartfuryApp extends StatelessWidget {
             return _slideRoute(const NewPasswordScreen(), settings);
           case CategoryScreen.routeName:
             return _fadeRoute(const CategoryScreen(), settings);
+          case ProductDetailScreen.routeName:
+            final args = settings.arguments as Map<String, dynamic>?;
+            final productId = args?['productId'] as int? ?? 0;
+            return _slideRoute(
+              ProductDetailScreen(productId: productId),
+              settings,
+            );
           default:
             return _fadeRoute(const SplashScreen(), settings);
         }

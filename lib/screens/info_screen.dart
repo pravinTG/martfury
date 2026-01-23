@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
@@ -16,9 +18,16 @@ class InfoScreen extends StatefulWidget {
 }
 
 class _InfoScreenState extends State<InfoScreen> {
-  final PageController _pageController =
-      PageController(viewportFraction: 0.78);
-  int _currentIndex = 0;
+  static const int _initialPage = 1000;
+
+  final PageController _pageController = PageController(
+    viewportFraction: 0.78,
+    initialPage: _initialPage,
+  );
+
+  int _currentIndex = 0; // logical index (0.._cards.length-1)
+  int _pageIndex = _initialPage; // raw page index for infinite-style scrolling
+  Timer? _autoSlideTimer;
 
   final List<_IntroCardData> _cards = const [
     _IntroCardData(
@@ -39,7 +48,27 @@ class _InfoScreenState extends State<InfoScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _startAutoSlide();
+  }
+
+  void _startAutoSlide() {
+    _autoSlideTimer?.cancel();
+    _autoSlideTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || _cards.isEmpty) return;
+      final nextIndex = _pageIndex + 1;
+      _pageController.animateToPage(
+        nextIndex,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  @override
   void dispose() {
+    _autoSlideTimer?.cancel();
     _pageController.dispose();
     super.dispose();
   }
@@ -58,6 +87,17 @@ class _InfoScreenState extends State<InfoScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
+                  // Top close button (X)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: IconButton(
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () {
+                        Navigator.of(context)
+                            .pushReplacementNamed(SignInScreen.routeName);
+                      },
+                    ),
+                  ),
                   Spacing.sizedBoxH32,
                   // Title
                   RichText(
@@ -85,13 +125,31 @@ class _InfoScreenState extends State<InfoScreen> {
                     height: constraints.maxHeight * 0.38,
                     child: PageView.builder(
                       controller: _pageController,
-                      itemCount: _cards.length,
                       onPageChanged: (index) {
-                        setState(() => _currentIndex = index);
+                        setState(() {
+                          _pageIndex = index;
+                          _currentIndex = index % _cards.length;
+                        });
                       },
                       itemBuilder: (context, index) {
-                        final card = _cards[index];
-                        return _IntroCard(data: card);
+                        final card = _cards[index % _cards.length];
+                        final bool isActive =
+                            (index % _cards.length) == _currentIndex;
+
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 250),
+                          curve: Curves.easeOut,
+                          margin: EdgeInsets.only(
+                            top: isActive ? 0 : 12,
+                            bottom: isActive ? 0 : 12,
+                          ),
+                          child: AnimatedScale(
+                            duration: const Duration(milliseconds: 250),
+                            scale: isActive ? 1.0 : 0.95,
+                            curve: Curves.easeOut,
+                            child: _IntroCard(data: card),
+                          ),
+                        );
                       },
                     ),
                   ),

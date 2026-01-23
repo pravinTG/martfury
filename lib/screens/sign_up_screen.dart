@@ -106,13 +106,6 @@ class SignUpScreen extends StatelessWidget {
                               color: const Color(0xFFE0E0E0),
                             ),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Or continue with',
-                              style: AppTextStyles.body2,
-                            ),
-                          ),
                           Expanded(
                             child: Container(
                               height: 1,
@@ -121,15 +114,7 @@ class SignUpScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      Spacing.sizedBoxH24,
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: const [
-                          _SocialBox(),
-                          _SocialBox(),
-                          _SocialBox(),
-                        ],
-                      ),
+
                       Spacing.sizedBoxH32,
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -251,5 +236,7 @@ class _SocialBox extends StatelessWidget {
     );
   }
 }
+
+
 
 

@@ -123,15 +123,7 @@ class SignInScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      Spacing.sizedBoxH24,
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: const [
-                          _SocialBox(),
-                          _SocialBox(),
-                          _SocialBox(),
-                        ],
-                      ),
+
                       Spacing.sizedBoxH32,
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,

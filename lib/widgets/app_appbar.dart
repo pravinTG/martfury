@@ -22,7 +22,7 @@ class AppAppBar extends StatelessWidget implements PreferredSizeWidget {
       automaticallyImplyLeading: false,
       leading: showBack
           ? IconButton(
-              icon: const Icon(Icons.arrow_back),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded),
               onPressed: () => Navigator.of(context).maybePop(),
             )
           : null,
@@ -35,5 +35,6 @@ class AppAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 }
+
 
 

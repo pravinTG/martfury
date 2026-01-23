@@ -34,7 +34,7 @@ class NewPasswordScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.arrow_back),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded),
                         onPressed: () => Navigator.of(context).maybePop(),
                       ),
                       Spacing.sizedBoxH24,
@@ -130,5 +130,6 @@ class _PasswordField extends StatelessWidget {
     );
   }
 }
+
 
 

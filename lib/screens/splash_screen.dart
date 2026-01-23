@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
-import 'info_screen.dart';
+import '../services/session_manager.dart';
+import 'main_tabs_screen.dart';
+import 'phone_login_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   static const String routeName = '/splash';
@@ -20,10 +22,23 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(InfoScreen.routeName);
-    });
+    _checkSession();
+  }
+
+  Future<void> _checkSession() async {
+    // Wait for splash screen display
+    await Future.delayed(const Duration(seconds: 2));
+    
+    if (!mounted) return;
+
+    // Check if session is valid
+    final isValid = await SessionManager.isSessionValid();
+    
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacementNamed(
+      isValid ? MainTabsScreen.routeName : PhoneLoginScreen.routeName,
+    );
   }
 
   @override
@@ -36,7 +51,7 @@ class _SplashScreenState extends State<SplashScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.primary,
-      body: const _SplashLogo(),
+      body: Center(child: const _SplashLogo()),
     );
   }
 }
@@ -47,12 +62,12 @@ class _SplashLogo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Align(
-      alignment: const Alignment(0, 0.4), // a bit lower than exact center
+      alignment: AlignmentGeometry.center, // a bit lower than exact center
       child: RichText(
         text: TextSpan(
           children: [
             TextSpan(
-              text: 'mart',
+              text: 'Goodies',
               style: GoogleFonts.poppins(
                 fontSize: 40,
                 fontWeight: FontWeight.w700,
@@ -60,7 +75,7 @@ class _SplashLogo extends StatelessWidget {
               ),
             ),
             TextSpan(
-              text: 'fury',
+              text: 'World',
               style: GoogleFonts.poppins(
                 fontSize: 40,
                 fontWeight: FontWeight.w700,
