@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../utils/cart_counter.dart';
 import '../widgets/spacing.dart';
 import '../utils/responsive.dart';
 import '../services/auth_service.dart';
@@ -28,7 +29,6 @@ class _HomepageScreenState extends State<HomepageScreen> {
   List<Map<String, dynamic>> _techProducts = [];
   List<Map<String, dynamic>> _electronicsProducts = [];
   bool _isLoading = true;
-  int _cartCount = 2;
   int _currentFlashSaleIndex = 0;
   int _currentCategoryIndex = 0;
 
@@ -36,6 +36,10 @@ class _HomepageScreenState extends State<HomepageScreen> {
   void initState() {
     super.initState();
     _loadProducts();
+    // Load cart count when screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      CartCounter.loadCartCount();
+    });
   }
 
   Future<void> _loadProducts() async {
@@ -157,58 +161,70 @@ class _HomepageScreenState extends State<HomepageScreen> {
   }
 
   Widget _buildHeader() {
-    return Container(
-      color: AppColors.primary,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Text(
-            'goodiesworld',
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.w700,
-              color: Colors.black,
-            ),
-          ),
-          const Spacer(),
-          Stack(
+    return StatefulBuilder(
+      builder: (context, setState) {
+        // Load cart count and rebuild when needed
+        CartCounter.loadCartCount().then((_) {
+          if (mounted) {
+            setState(() {});
+          }
+        });
+        
+        return Container(
+          color: AppColors.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
-                onPressed: () {
-                  // Navigate to cart
-                },
+              Text(
+                'goodiesworld',
+                style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.black,
+                ),
               ),
-              if (_cartCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$_cartCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+              const Spacer(),
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
+                    onPressed: () {
+                      // Navigate to cart tab
+                      Navigator.of(context).pushNamed('/main');
+                    },
+                  ),
+                  if (CartCounter.cartCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          '${CartCounter.cartCount}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined, color: Colors.black),
+                onPressed: () {
+                  // Navigate to notifications
+                },
+              ),
             ],
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.black),
-            onPressed: () {
-              // Navigate to notifications
-            },
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
