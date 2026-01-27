@@ -8,6 +8,9 @@ import '../services/api_service.dart';
 import '../services/session_manager.dart';
 import '../utils/safe_print.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/api_endpoints.dart';
+import '../utils/custom_snackbar.dart';
+import '../utils/cart_counter.dart';
 
 class WishlistScreen extends StatefulWidget {
   static const String routeName = '/wishlist';
@@ -59,18 +62,39 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['status'] == true && data['favorites'] is List) {
+
+        // Expected format:
+        // {
+        //   "status": true,
+        //   "favorites": [
+        //     {
+        //       "id": 99,
+        //       "name": "...",
+        //       "price": "56",
+        //       "regular_price": "",
+        //       "sale_price": "",
+        //       "image": "https://...",
+        //       "is_favorite": true
+        //     }
+        //   ]
+        // }
+        if (data is Map &&
+            data['status'] == true &&
+            data['favorites'] is List) {
+          final List<dynamic> favorites = data['favorites'];
           setState(() {
-            _wishlistProducts = List<Map<String, dynamic>>.from(data['favorites']);
+            _wishlistProducts =
+                List<Map<String, dynamic>>.from(favorites);
             _isLoading = false;
           });
-          safePrint('✅ Wishlist products fetched: ${_wishlistProducts.length} items');
+          safePrint(
+              '✅ Wishlist products fetched: ${_wishlistProducts.length} items');
         } else {
           setState(() {
             _isLoading = false;
             _errorMessage = 'Invalid wishlist data format';
           });
-          safePrint('❌ Invalid wishlist data format');
+          safePrint('❌ Invalid wishlist data format: $data');
         }
       } else {
         setState(() {
@@ -99,7 +123,6 @@ class _WishlistScreenState extends State<WishlistScreen> {
             // Header
             _buildHeader(),
             // Filter and Sort
-            _buildFilterSortBar(),
             // Products Grid
             Expanded(
               child: _isLoading
@@ -135,141 +158,49 @@ class _WishlistScreenState extends State<WishlistScreen> {
             ),
           ),
           const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.black),
-            onPressed: () {
-              // Search
-            },
-          ),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
-                onPressed: () {
-                  // Cart
-                },
-              ),
-              if (_cartCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      '$_cartCount',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildFilterSortBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: () {
-                // Filter
-              },
-              icon: const Icon(Icons.tune, size: 20),
-              label: Text('Filter', style: AppTextStyles.body1),
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                side: const BorderSide(color: AppColors.border),
-              ),
-            ),
-          ),
-          Spacing.sizedBoxW12,
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () {
-                _showSortDialog();
-              },
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                side: const BorderSide(color: AppColors.border),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Sort by: $_sortBy',
-                    style: AppTextStyles.body1,
-                  ),
-                  Spacing.sizedBoxW4,
-                  const Icon(Icons.keyboard_arrow_down, size: 20),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildProductsGrid() {
-    // Apply sorting
-    List<Map<String, dynamic>> sortedProducts = List.from(_wishlistProducts);
-    
-    switch (_sortBy) {
-      case 'Price: Low to High':
-        sortedProducts.sort((a, b) {
-          final priceA = double.tryParse(a['price']?.toString() ?? '0') ?? 0;
-          final priceB = double.tryParse(b['price']?.toString() ?? '0') ?? 0;
-          return priceA.compareTo(priceB);
-        });
-        break;
-      case 'Price: High to Low':
-        sortedProducts.sort((a, b) {
-          final priceA = double.tryParse(a['price']?.toString() ?? '0') ?? 0;
-          final priceB = double.tryParse(b['price']?.toString() ?? '0') ?? 0;
-          return priceB.compareTo(priceA);
-        });
-        break;
-      case 'Newest':
-        sortedProducts.sort((a, b) {
-          final dateA = a['date_created']?.toString() ?? '';
-          final dateB = b['date_created']?.toString() ?? '';
-          return dateB.compareTo(dateA);
-        });
-        break;
-      case 'Oldest':
-        sortedProducts.sort((a, b) {
-          final dateA = a['date_created']?.toString() ?? '';
-          final dateB = b['date_created']?.toString() ?? '';
-          return dateA.compareTo(dateB);
-        });
-        break;
+    // Apply sorting (by price only for this simplified favorites format)
+    List<Map<String, dynamic>> sortedProducts =
+        List<Map<String, dynamic>>.from(_wishlistProducts);
+
+    if (_sortBy == 'Price: Low to High') {
+      sortedProducts.sort((a, b) {
+        final priceA =
+            double.tryParse(a['price']?.toString() ?? '0') ?? 0;
+        final priceB =
+            double.tryParse(b['price']?.toString() ?? '0') ?? 0;
+        return priceA.compareTo(priceB);
+      });
+    } else if (_sortBy == 'Price: High to Low') {
+      sortedProducts.sort((a, b) {
+        final priceA =
+            double.tryParse(a['price']?.toString() ?? '0') ?? 0;
+        final priceB =
+            double.tryParse(b['price']?.toString() ?? '0') ?? 0;
+        return priceB.compareTo(priceA);
+      });
     }
+
+    final isTablet = Responsive.isTablet(context);
+    final crossAxisCount = isTablet ? 3 : 2;
+
+    // Make each grid item a bit taller (smaller aspect ratio) so
+    // the image, text and two buttons fit without overflow.
+    final double childAspectRatio = isTablet ? 0.7 : 0.6;
 
     return GridView.builder(
       padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
-        childAspectRatio: 0.7,
+        childAspectRatio: childAspectRatio,
       ),
       itemCount: sortedProducts.length,
       itemBuilder: (context, index) {
@@ -283,18 +214,17 @@ class _WishlistScreenState extends State<WishlistScreen> {
     final String name = product['name'] ?? 'Product Name';
     final String price = product['price']?.toString() ?? '0';
     final String? regularPrice = product['regular_price']?.toString();
-    final bool onSale = product['on_sale'] ?? false;
-    final List<dynamic>? images = product['images'] as List?;
-    final String? imageUrl = images != null && images.isNotEmpty 
-        ? images[0]['src'] as String? 
-        : null;
-    final String stockStatus = product['stock_status']?.toString() ?? 'instock';
+    final String? salePrice = product['sale_price']?.toString();
+    final String? imageUrl = product['image']?.toString();
     final String productId = product['id']?.toString() ?? '';
 
     final double priceValue = double.tryParse(price) ?? 0.0;
-    final double? regularPriceValue = regularPrice != null ? double.tryParse(regularPrice) : null;
-    final bool hasDiscount = onSale && regularPriceValue != null && regularPriceValue > priceValue;
-    final bool isSoldOut = stockStatus.toLowerCase() == 'outofstock';
+    final double? regularPriceValue =
+        regularPrice != null && regularPrice.isNotEmpty
+            ? double.tryParse(regularPrice)
+            : null;
+    final bool hasDiscount =
+        salePrice != null && salePrice.isNotEmpty && regularPriceValue != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -321,58 +251,31 @@ class _WishlistScreenState extends State<WishlistScreen> {
                   ),
                   child: imageUrl != null
                       ? ClipRRect(
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(12),
-                            topRight: Radius.circular(12),
-                          ),
-                          child: Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
-                          ),
-                        )
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _buildPlaceholderImage(),
+                    ),
+                  )
                       : _buildPlaceholderImage(),
                 ),
-                if (isSoldOut)
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        topRight: Radius.circular(12),
-                      ),
-                    ),
-                    child: Center(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade800,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Sold Out',
-                          style: AppTextStyles.body2.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
+
           // Product Info
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+                // ❌ REMOVE mainAxisSize.min to allow proper layout
                 children: [
                   // Product Name
                   Text(
@@ -383,7 +286,9 @@ class _WishlistScreenState extends State<WishlistScreen> {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  Spacing.sizedBoxH8,
+
+                  const SizedBox(height: 6),
+
                   // Price
                   Row(
                     children: [
@@ -391,7 +296,9 @@ class _WishlistScreenState extends State<WishlistScreen> {
                         child: Text(
                           '₹${priceValue.toStringAsFixed(2)}',
                           style: AppTextStyles.body1.copyWith(
-                            color: hasDiscount ? Colors.red : AppColors.textPrimary,
+                            color: hasDiscount
+                                ? Colors.red
+                                : AppColors.textPrimary,
                             fontWeight: FontWeight.w600,
                           ),
                           maxLines: 1,
@@ -399,12 +306,13 @@ class _WishlistScreenState extends State<WishlistScreen> {
                         ),
                       ),
                       if (hasDiscount && regularPriceValue != null) ...[
-                        Spacing.sizedBoxW4,
+                        const SizedBox(width: 4),
                         Flexible(
                           child: Text(
                             '₹${regularPriceValue.toStringAsFixed(2)}',
                             style: AppTextStyles.caption.copyWith(
-                              decoration: TextDecoration.lineThrough,
+                              decoration:
+                              TextDecoration.lineThrough,
                               color: AppColors.textSecondary,
                             ),
                             maxLines: 1,
@@ -414,18 +322,24 @@ class _WishlistScreenState extends State<WishlistScreen> {
                       ],
                     ],
                   ),
-                  const Spacer(),
+
+                  const Spacer(), // ⭐ Push buttons to bottom safely
+
                   // Buttons
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => _removeFromWishlist(productId),
+                          onPressed: () =>
+                              _removeFromWishlist(productId),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            side: const BorderSide(color: AppColors.border),
+                            padding:
+                            const EdgeInsets.symmetric(vertical: 6),
+                            side: const BorderSide(
+                                color: AppColors.border),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius:
+                              BorderRadius.circular(8),
                             ),
                           ),
                           child: Text(
@@ -433,34 +347,38 @@ class _WishlistScreenState extends State<WishlistScreen> {
                             style: AppTextStyles.body2.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ),
-                      Spacing.sizedBoxW8,
+
+                      const SizedBox(width: 6),
+
                       Expanded(
                         child: ElevatedButton(
-                          onPressed: isSoldOut ? null : () => _addToCart(product),
+                          onPressed: () => _addToCart(product),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 6),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius:
+                              BorderRadius.circular(8),
                             ),
                           ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.shopping_bag, size: 16),
-                              Spacing.sizedBoxW4,
-                              Text(
-                                'Add to cart',
-                                style: AppTextStyles.body2.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.black,
-                                ),
-                              ),
-                            ],
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment:
+                              MainAxisAlignment.center,
+                              children: const [
+                                Icon(Icons.shopping_bag, size: 16),
+                                SizedBox(width: 4),
+                                Text('Add'),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -473,6 +391,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
         ],
       ),
     );
+
   }
 
   Widget _buildPlaceholderImage() {
@@ -596,33 +515,111 @@ class _WishlistScreenState extends State<WishlistScreen> {
     try {
       final token = await SessionManager.getValidFirebaseToken();
       if (token == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login to remove items')),
+        CustomSnackBar.show(
+          context,
+          'Please login to remove items',
+          isError: true,
         );
         return;
       }
 
-      // TODO: Call API to remove from wishlist
-      // For now, just remove from local list
-      setState(() {
-        _wishlistProducts.removeWhere((p) => p['id']?.toString() == productId);
-      });
-      
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Removed from wishlist')),
+      final response = await ApiService.posts(
+        '/toggle-favorite',
+        {
+          'product_id': productId,
+        },
+        token: token,
       );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _wishlistProducts
+              .removeWhere((p) => p['id']?.toString() == productId);
+        });
+
+        final data = jsonDecode(response.body);
+        CustomSnackBar.show(
+          context,
+          data['message'] ?? 'Removed from wishlist',
+          isError: false,
+        );
+      } else {
+        CustomSnackBar.show(
+          context,
+          'Failed to remove item',
+          isError: true,
+        );
+      }
     } catch (e) {
       safePrint('Error removing from wishlist: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to remove item')),
+      CustomSnackBar.show(
+        context,
+        'Failed to remove item',
+        isError: true,
       );
     }
   }
 
   Future<void> _addToCart(Map<String, dynamic> product) async {
-    // TODO: Call API to add to cart
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product['name']} added to cart')),
-    );
+    try {
+      final token = await SessionManager.getValidFirebaseToken();
+      if (token == null) {
+        CustomSnackBar.show(
+          context,
+          'Please login to add to cart',
+          isError: true,
+        );
+        return;
+      }
+
+      final productId = product['id']?.toString() ?? '';
+      if (productId.isEmpty) {
+        CustomSnackBar.show(
+          context,
+          'Invalid product',
+          isError: true,
+        );
+        return;
+      }
+
+      final payload = {
+        'product_id': productId,
+        'quantity': 1,
+      };
+
+      final response = await ApiService.posts(
+        ApiEndpoints.cartAdd,
+        payload,
+        token: token,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        CustomSnackBar.show(
+          context,
+          data['message'] ?? 'Added to cart successfully',
+          isError: false,
+        );
+
+        // Refresh global cart counter
+        await CartCounter.loadCartCount();
+        setState(() {
+          _cartCount = CartCounter.cartCount;
+        });
+      } else {
+        CustomSnackBar.show(
+          context,
+          'Failed to add to cart',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      safePrint('Error adding to cart from wishlist: $e');
+      CustomSnackBar.show(
+        context,
+        'Something went wrong',
+        isError: true,
+      );
+    }
   }
 }

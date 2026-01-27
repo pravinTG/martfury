@@ -1,14 +1,18 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+import '../services/api_endpoints.dart';
+import '../services/api_service.dart';
+import '../services/session_manager.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
-import '../widgets/spacing.dart';
-import '../services/api_service.dart';
-import '../services/api_endpoints.dart';
-import '../services/session_manager.dart';
-import '../utils/safe_print.dart';
+import '../utils/cart_counter.dart';
 import '../utils/custom_snackbar.dart';
-import 'package:google_fonts/google_fonts.dart';
+import '../utils/safe_print.dart';
+import '../widgets/spacing.dart';
+import 'checkout_screen.dart';
 
 class CartScreen extends StatefulWidget {
   static const String routeName = '/cart';
@@ -130,20 +134,31 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         // Handle different response formats
         List<Map<String, dynamic>> items = [];
         if (data is Map) {
-          if (data['items'] != null && data['items'] is List) {
+          // New custom format: { status, cart_items: [...], cart_totals: {...} }
+          if (data['cart_items'] != null && data['cart_items'] is List) {
+            items = List<Map<String, dynamic>>.from(data['cart_items']);
+          } else if (data['items'] != null && data['items'] is List) {
             items = List<Map<String, dynamic>>.from(data['items']);
           } else if (data['cart'] != null && data['cart'] is List) {
             items = List<Map<String, dynamic>>.from(data['cart']);
           } else if (data['data'] != null && data['data'] is List) {
             items = List<Map<String, dynamic>>.from(data['data']);
           }
-          
+
           // Update totals if available
-          if (data['total'] != null) {
-            _totalAmount = double.tryParse(data['total'].toString()) ?? 0.0;
-          }
-          if (data['total_items'] != null) {
-            _totalItems = int.tryParse(data['total_items'].toString()) ?? 0;
+          if (data['cart_totals'] != null && data['cart_totals'] is Map) {
+            final totals = data['cart_totals'] as Map<String, dynamic>;
+            _totalAmount =
+                double.tryParse(totals['total']?.toString() ?? '0') ?? 0.0;
+            _totalItems =
+                int.tryParse(totals['total_items']?.toString() ?? '0') ?? 0;
+          } else {
+            if (data['total'] != null) {
+              _totalAmount = double.tryParse(data['total'].toString()) ?? 0.0;
+            }
+            if (data['total_items'] != null) {
+              _totalItems = int.tryParse(data['total_items'].toString()) ?? 0;
+            }
           }
         } else if (data is List) {
           items = List<Map<String, dynamic>>.from(data);
@@ -163,6 +178,9 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         if (_totalAmount == 0.0) {
           _calculateTotal();
         }
+
+        // Sync global cart counter so badges update
+        CartCounter.updateCartCount(_totalItems, total: _totalAmount);
       } else {
         setState(() {
           _isLoading = false;
@@ -206,7 +224,9 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         List<Map<String, dynamic>> items = [];
         
         if (data is Map) {
-          if (data['items'] != null && data['items'] is List) {
+          if (data['cart_items'] != null && data['cart_items'] is List) {
+            items = List<Map<String, dynamic>>.from(data['cart_items']);
+          } else if (data['items'] != null && data['items'] is List) {
             items = List<Map<String, dynamic>>.from(data['items']);
           } else if (data['cart'] != null && data['cart'] is List) {
             items = List<Map<String, dynamic>>.from(data['cart']);
@@ -224,6 +244,7 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         });
 
         _calculateTotal();
+        CartCounter.updateCartCount(_totalItems, total: _totalAmount);
       } else {
         setState(() {
           _isLoadingMore = false;
@@ -256,9 +277,10 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
     });
   }
 
+  /// Update quantity similar to old CartPage logic (using product & variation IDs)
   Future<void> _updateQuantity(int index, int newQuantity) async {
     if (newQuantity < 1) {
-      _removeItem(index);
+      await _removeItem(index);
       return;
     }
 
@@ -267,14 +289,28 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
       if (token == null) return;
 
       final item = _cartItems[index];
+      final String productId =
+          item['product_id']?.toString() ?? item['id']?.toString() ?? '';
+      final String? variationId =
+          item['variation_id'] != null ? item['variation_id'].toString() : null;
+
+      final payload = <String, dynamic>{
+        'product_id': productId,
+        'quantity': newQuantity,
+        if (variationId != null && variationId.isNotEmpty)
+          'variation_id': variationId,
+      };
+
+      safePrint('🛒 Update cart payload: $payload');
+
       final response = await ApiService.posts(
         ApiEndpoints.cartUpdate,
-        {
-          'cart_item_key': item['key'] ?? item['id']?.toString(),
-          'quantity': newQuantity,
-        },
+        payload,
         token: token,
       );
+
+      safePrint('🛒 Update cart status: ${response.statusCode}');
+      safePrint('🛒 Update cart body: ${response.body}');
 
       if (response.statusCode == 200) {
         setState(() {
@@ -283,28 +319,45 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         _calculateTotal();
         CustomSnackBar.show(context, 'Quantity updated', isError: false);
       } else {
-        CustomSnackBar.show(context, 'Failed to update quantity', isError: true);
+        CustomSnackBar.show(context, 'Failed to update cart', isError: true);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       CustomSnackBar.show(context, 'Something went wrong', isError: true);
       safePrint('Error updating quantity: $e');
+      safePrint('Stack trace: $stackTrace');
     }
   }
 
+  /// Remove item similar to old CartPage logic (using product & variation IDs)
   Future<void> _removeItem(int index) async {
     try {
       final token = await SessionManager.getValidFirebaseToken();
       if (token == null) return;
 
       final item = _cartItems[index];
+      final String productId =
+          item['product_id']?.toString() ?? item['id']?.toString() ?? '';
+      final String? variationId =
+          item['variation_id'] != null ? item['variation_id'].toString() : null;
+
+      final payload = <String, dynamic>{
+        'product_id': productId,
+        if (variationId != null && variationId.isNotEmpty)
+          'variation_id': variationId,
+      };
+
+      safePrint('🛒 Remove cart payload: $payload');
+
+      // If your backend supports /cart/remove like in the old project,
+      // use ApiEndpoints.cartRemove; otherwise keep using cartUpdate with quantity 0.
       final response = await ApiService.posts(
-        ApiEndpoints.cartUpdate,
-        {
-          'cart_item_key': item['key'] ?? item['id']?.toString(),
-          'quantity': 0,
-        },
+        ApiEndpoints.cartRemove,
+        payload,
         token: token,
       );
+
+      safePrint('🛒 Remove cart status: ${response.statusCode}');
+      safePrint('🛒 Remove cart body: ${response.body}');
 
       if (response.statusCode == 200) {
         setState(() {
@@ -315,9 +368,10 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
       } else {
         CustomSnackBar.show(context, 'Failed to remove item', isError: true);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       CustomSnackBar.show(context, 'Something went wrong', isError: true);
       safePrint('Error removing item: $e');
+      safePrint('Stack trace: $stackTrace');
     }
   }
 
@@ -362,15 +416,6 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
               color: Colors.black,
             ),
           ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Icons.search, color: Colors.black),
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.black),
-            onPressed: () {},
-          ),
         ],
       ),
     );
@@ -403,7 +448,8 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
     final productName = item['name'] ?? item['product_name'] ?? 'Product';
     final quantity = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
     final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0.0;
-    final lineTotal = double.tryParse(item['line_total']?.toString() ?? '0') ?? (price * quantity);
+    final lineTotal =
+        double.tryParse(item['price']?.toString() ?? '0') ?? (price * quantity);
     final imageUrl = item['image'] ?? item['product_image'] ?? '';
     final variation = item['variation'] ?? {};
 
@@ -475,49 +521,71 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
                 // Quantity Controls
                 Row(
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppColors.border),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.remove, size: 18),
-                            onPressed: () => _updateQuantity(index, quantity - 1),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
+                    // ================= QUANTITY CONTROLLER =================
+                    Expanded(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        // 🔥 hard limit
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: AppColors.border),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          Container(
-                            width: 40,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: Text(
-                              quantity.toString(),
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.body2.copyWith(
-                                fontWeight: FontWeight.w600,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.max, // 🔥 MUST be max
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.remove, size: 18),
+                                onPressed: quantity > 1
+                                    ? () => _updateQuantity(index, quantity - 1)
+                                    : null,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
                               ),
-                            ),
+                              Text(
+                                quantity.toString(),
+                                style: AppTextStyles.body2.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add, size: 18),
+                                onPressed: () =>
+                                    _updateQuantity(index, quantity + 1),
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 32,
+                                  minHeight: 32,
+                                ),
+                              ),
+                            ],
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.add, size: 18),
-                            onPressed: () => _updateQuantity(index, quantity + 1),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
+                        ),
                       ),
                     ),
-                    const Spacer(),
-                    Text(
-                      '₹${lineTotal.toStringAsFixed(2)}',
-                      style: AppTextStyles.heading3.copyWith(
-                        color: AppColors.primary,
+
+                    const SizedBox(width: 8),
+
+                    // ================= PRICE =================
+                    SizedBox(
+                      width: 64, // 🔥 fixed price width = no overflow
+                      child: Text(
+                        '₹${lineTotal.toStringAsFixed(2)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: AppTextStyles.body2.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ],
-                ),
+                )
               ],
             ),
           ),
@@ -583,8 +651,14 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                // Navigate to checkout
-                CustomSnackBar.show(context, 'Proceeding to checkout', isError: false);
+                // Navigate to checkout with cart summary
+                Navigator.of(context).pushNamed(
+                  CheckoutScreen.routeName,
+                  arguments: {
+                    'totalAmount': _totalAmount,
+                    'totalItems': _totalItems,
+                  },
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,

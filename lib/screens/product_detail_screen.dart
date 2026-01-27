@@ -8,6 +8,7 @@ import '../services/api_endpoints.dart';
 import '../services/session_manager.dart';
 import '../utils/safe_print.dart';
 import '../utils/custom_snackbar.dart';
+import '../utils/cart_counter.dart';
 import 'main_tabs_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -34,7 +35,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String? _selectedVariation;
   int _selectedVariationIndex = 0;
   int _quantity = 1;
-  int _cartCount = 2;
+  int _cartCount = 0;
   bool _isWishlisted = false;
   bool _isAddingToCart = false;
   bool _isTogglingFavorite = false;
@@ -44,6 +45,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     _loadProductDetails();
+    _syncCartBadge();
   }
 
   @override
@@ -92,6 +94,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       });
       safePrint('❌ Exception loading product: $e');
       safePrint('Stack trace: $stackTrace');
+    }
+  }
+
+  Future<void> _syncCartBadge() async {
+    await CartCounter.loadCartCount();
+    if (mounted) {
+      setState(() {
+        _cartCount = CartCounter.cartCount;
+      });
     }
   }
 
@@ -1457,11 +1468,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           data['message'] ?? 'Added to cart successfully',
           isError: false,
         );
-        
-        // Update cart count (you can implement a cart counter provider here)
-        setState(() {
-          _cartCount++;
-        });
+
+        // Refresh global cart counter and local badge
+        await CartCounter.loadCartCount();
+        if (mounted) {
+          setState(() {
+            _cartCount = CartCounter.cartCount;
+          });
+        }
 
         if (navigateToCart) {
           // Navigate to cart tab in main tabs

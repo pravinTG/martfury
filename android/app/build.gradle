@@ -26,8 +26,8 @@ if (flutterVersionName == null) {
 android {
     namespace = "com.example.martfury"
     compileSdk = flutter.compileSdkVersion
-    // Explicitly match plugin requirement for NDK 25.1.8937393
-    ndkVersion = "25.1.8937393"
+    // Match the highest required NDK version (plugins are backward compatible).
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
