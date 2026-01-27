@@ -17,6 +17,7 @@ import 'screens/homepage_screen.dart';
 import 'screens/main_tabs_screen.dart';
 import 'screens/product_detail_screen.dart';
 import 'screens/cart_screen.dart';
+import 'screens/update_profile_screen.dart';
 import 'services/auth_service.dart';
 
 Future<void> main() async {
@@ -92,6 +93,8 @@ class MartfuryApp extends StatelessWidget {
             );
           case CartScreen.routeName:
             return _fadeRoute(const CartScreen(), settings);
+          case UpdateProfileScreen.routeName:
+            return _slideRoute(const UpdateProfileScreen(), settings);
           default:
             return _fadeRoute(const SplashScreen(), settings);
         }

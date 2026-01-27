@@ -2,14 +2,17 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
-import '../utils/cart_counter.dart';
 import '../widgets/spacing.dart';
 import '../utils/responsive.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/api_endpoints.dart';
+import '../services/session_manager.dart';
 import '../utils/safe_print.dart';
+import '../utils/custom_snackbar.dart';
+import '../utils/cart_counter.dart';
 import 'product_detail_screen.dart';
+import 'main_tabs_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class HomepageScreen extends StatefulWidget {
@@ -23,12 +26,21 @@ class HomepageScreen extends StatefulWidget {
 
 class _HomepageScreenState extends State<HomepageScreen> {
   final AuthService _authService = AuthService();
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _flashSaleProducts = [];
   List<Map<String, dynamic>> _clothingProducts = [];
   List<Map<String, dynamic>> _techProducts = [];
   List<Map<String, dynamic>> _electronicsProducts = [];
+  List<Map<String, dynamic>> _searchProducts = [];
+  
   bool _isLoading = true;
+  bool _isSearching = false;
+  bool _isAddingToCart = false;
+  String _searchQuery = '';
+  
   int _currentFlashSaleIndex = 0;
   int _currentCategoryIndex = 0;
 
@@ -36,10 +48,39 @@ class _HomepageScreenState extends State<HomepageScreen> {
   void initState() {
     super.initState();
     _loadProducts();
-    // Load cart count when screen loads
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      CartCounter.loadCartCount();
-    });
+    _loadCartCount();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    if (query != _searchQuery) {
+      setState(() {
+        _searchQuery = query;
+        _isSearching = query.isNotEmpty;
+      });
+      if (query.isNotEmpty) {
+        _searchProductsApi(query);
+      } else {
+        setState(() {
+          _searchProducts = [];
+        });
+      }
+    }
+  }
+
+  Future<void> _loadCartCount() async {
+    await CartCounter.loadCartCount();
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadProducts() async {
@@ -119,40 +160,42 @@ class _HomepageScreenState extends State<HomepageScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                  : RefreshIndicator(
-                      onRefresh: _loadProducts,
-                      color: AppColors.primary,
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: Responsive.width(context, 0.04),
+                  : _isSearching && _searchQuery.isNotEmpty
+                      ? _buildSearchResults()
+                      : RefreshIndicator(
+                          onRefresh: _loadProducts,
+                          color: AppColors.primary,
+                          child: SingleChildScrollView(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: Responsive.width(context, 0.04),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Spacing.sizedBoxH16,
+                                // Promotional Banner
+                                _buildPromoBanner(),
+                                Spacing.sizedBoxH20,
+                                // Feature Cards
+                                _buildFeatureCards(),
+                                Spacing.sizedBoxH24,
+                                // Flash Sale Section
+                                _buildFlashSaleSection(),
+                                Spacing.sizedBoxH24,
+                                // Category Sections
+                                _buildCategorySection('Clothing & Apparel', _clothingProducts),
+                                Spacing.sizedBoxH24,
+                                _buildCategorySection('Computer & Technology', _techProducts),
+                                Spacing.sizedBoxH24,
+                                _buildCategorySection('Consumer Electric', _electronicsProducts),
+                                Spacing.sizedBoxH24,
+                                // Recently Viewed
+                                _buildRecentlyViewed(),
+                                Spacing.sizedBoxH24,
+                              ],
+                            ),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Spacing.sizedBoxH16,
-                            // Promotional Banner
-                            _buildPromoBanner(),
-                            Spacing.sizedBoxH20,
-                            // Feature Cards
-                            _buildFeatureCards(),
-                            Spacing.sizedBoxH24,
-                            // Flash Sale Section
-                            _buildFlashSaleSection(),
-                            Spacing.sizedBoxH24,
-                            // Category Sections
-                            _buildCategorySection('Clothing & Apparel', _clothingProducts),
-                            Spacing.sizedBoxH24,
-                            _buildCategorySection('Computer & Technology', _techProducts),
-                            Spacing.sizedBoxH24,
-                            _buildCategorySection('Consumer Electric', _electronicsProducts),
-                            Spacing.sizedBoxH24,
-                            // Recently Viewed
-                            _buildRecentlyViewed(),
-                            Spacing.sizedBoxH24,
-                          ],
-                        ),
-                      ),
-                    ),
             ),
           ],
         ),
@@ -162,14 +205,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
 
   Widget _buildHeader() {
     return StatefulBuilder(
-      builder: (context, setState) {
-        // Load cart count and rebuild when needed
-        CartCounter.loadCartCount().then((_) {
-          if (mounted) {
-            setState(() {});
-          }
-        });
-        
+      builder: (context, setHeaderState) {
         return Container(
           color: AppColors.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -188,9 +224,16 @@ class _HomepageScreenState extends State<HomepageScreen> {
                 children: [
                   IconButton(
                     icon: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
-                    onPressed: () {
-                      // Navigate to cart tab
-                      Navigator.of(context).pushNamed('/main');
+                    onPressed: () async {
+                      await Navigator.pushNamed(
+                        context,
+                        MainTabsScreen.routeName,
+                        arguments: {'initialIndex': 2},
+                      );
+                      await _loadCartCount();
+                      if (mounted) {
+                        setHeaderState(() {});
+                      }
                     },
                   ),
                   if (CartCounter.cartCount > 0)
@@ -204,7 +247,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
                           shape: BoxShape.circle,
                         ),
                         child: Text(
-                          '${CartCounter.cartCount}',
+                          CartCounter.cartCount > 99 ? '99+' : '${CartCounter.cartCount}',
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
@@ -237,17 +280,219 @@ class _HomepageScreenState extends State<HomepageScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Row(
-        children: [
-          Text(
-            "I'm shopping for...",
-            style: AppTextStyles.body2.copyWith(color: AppColors.textSecondary),
-          ),
-          const Spacer(),
-          const Icon(Icons.search, color: Colors.black),
-        ],
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        decoration: InputDecoration(
+          hintText: "I'm shopping for...",
+          hintStyle: AppTextStyles.body2.copyWith(color: AppColors.textSecondary),
+          border: InputBorder.none,
+          suffixIcon: Icon(Icons.search, color: Colors.black),
+        ),
+        onSubmitted: (value) {
+          if (value.trim().isNotEmpty) {
+            _searchProductsApi(value.trim());
+          }
+        },
       ),
     );
+  }
+
+  Future<void> _searchProductsApi(String query) async {
+    if (query.isEmpty) {
+      setState(() {
+        _searchProducts = [];
+        _isSearching = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      final response = await ApiService.gets(
+        '${ApiEndpoints.products}?search=$query',
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          _searchProducts = data.map((product) {
+            final priceString = product['price']?.toString() ?? '0';
+            final price = double.tryParse(priceString) ?? 0.0;
+            final regularPriceString = product['regular_price']?.toString() ?? '0';
+            final regularPrice = double.tryParse(regularPriceString) ?? 0.0;
+            final images = product['images'] as List?;
+            final image = (images != null && images.isNotEmpty)
+                ? images[0]['src'].toString()
+                : '';
+
+            return {
+              'id': product['id'],
+              'name': product['name']?.toString() ?? 'Unnamed',
+              'image': image,
+              'price': price,
+              'regular_price': regularPrice,
+              'on_sale': product['on_sale'] ?? false,
+              'is_favorite': product['is_favorite'] ?? false,
+            };
+          }).toList();
+          _isSearching = false;
+        });
+      } else {
+        setState(() {
+          _isSearching = false;
+        });
+      }
+    } catch (e) {
+      safePrint('❌ Search error: $e');
+      setState(() {
+        _isSearching = false;
+      });
+    }
+  }
+
+  Future<void> _addToCart(int productId, {String? variationId, String? paWeight}) async {
+    if (_isAddingToCart) return;
+
+    setState(() {
+      _isAddingToCart = true;
+    });
+
+    try {
+      final token = await SessionManager.getValidFirebaseToken();
+      if (token == null) {
+        CustomSnackBar.show(context, 'Please login to add to cart', isError: true);
+        setState(() => _isAddingToCart = false);
+        return;
+      }
+
+      final payload = {
+        'product_id': productId.toString(),
+        'quantity': 1,
+      };
+
+      if (variationId != null && variationId.isNotEmpty && variationId != '0') {
+        payload['variation_id'] = variationId;
+      }
+
+      if (paWeight != null && paWeight.isNotEmpty) {
+        payload['variation'] = {'attribute_pa_size': paWeight};
+      }
+
+      safePrint('Adding to cart: $payload');
+      final response = await ApiService.posts(
+        ApiEndpoints.cartAdd,
+        payload,
+        token: token,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        CustomSnackBar.show(
+          context,
+          data['message'] ?? 'Added to cart successfully',
+          isError: false,
+        );
+        
+        await CartCounter.loadCartCount();
+        if (mounted) {
+          setState(() {});
+        }
+      } else {
+        final errorData = jsonDecode(response.body);
+        CustomSnackBar.show(
+          context,
+          errorData['message'] ?? 'Failed to add to cart',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      CustomSnackBar.show(context, 'Error adding to cart: $e', isError: true);
+      safePrint('❌ Exception adding to cart: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isAddingToCart = false);
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite(int productId, Map<String, dynamic> product) async {
+    try {
+      final token = await SessionManager.getValidFirebaseToken();
+      if (token == null) {
+        CustomSnackBar.show(context, 'Please login to add favorites', isError: true);
+        return;
+      }
+
+      final variationId = product['variation_id']?.toString() ?? '0';
+      
+      final response = await ApiService.posts(
+        '/toggle-favorite',
+        {
+          'product_id': productId.toString(),
+          'variation_id': variationId,
+        },
+        token: token,
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final isFavorite = product['is_favorite'] ?? false;
+        
+        // Update product favorite status in all lists
+        _updateProductFavoriteStatus(productId, !isFavorite);
+        
+        CustomSnackBar.show(
+          context,
+          data['message'] ?? (isFavorite ? 'Removed from favorites' : 'Added to favorites'),
+          isError: false,
+        );
+      } else {
+        CustomSnackBar.show(context, 'Failed to update wishlist', isError: true);
+      }
+    } catch (e) {
+      CustomSnackBar.show(context, 'Failed to update wishlist', isError: true);
+      safePrint('❌ Error toggling favorite: $e');
+    }
+  }
+
+  void _updateProductFavoriteStatus(int productId, bool isFavorite) {
+    setState(() {
+      // Update in all product lists
+      for (var product in _products) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+      for (var product in _flashSaleProducts) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+      for (var product in _clothingProducts) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+      for (var product in _techProducts) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+      for (var product in _electronicsProducts) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+      for (var product in _searchProducts) {
+        if (product['id'] == productId) {
+          product['is_favorite'] = isFavorite;
+        }
+      }
+    });
   }
 
   Widget _buildPromoBanner() {
@@ -460,24 +705,9 @@ class _HomepageScreenState extends State<HomepageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              title,
-              style: AppTextStyles.heading2,
-            ),
-            TextButton(
-              onPressed: () {},
-              child: Text(
-                'View All',
-                style: AppTextStyles.body2.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+        Text(
+          title,
+          style: AppTextStyles.heading2,
         ),
         Spacing.sizedBoxH12,
         SizedBox(
@@ -519,6 +749,8 @@ class _HomepageScreenState extends State<HomepageScreen> {
         ? brands[0]['name'] as String? 
         : null;
     final int productId = product['id'] as int? ?? 0;
+    final bool isFavorite = product['is_favorite'] ?? false;
+    final String variationId = product['variation_id']?.toString() ?? '0';
 
     final double priceValue = double.tryParse(price) ?? 0.0;
     final double? regularPriceValue = regularPrice != null ? double.tryParse(regularPrice) : null;
@@ -526,12 +758,15 @@ class _HomepageScreenState extends State<HomepageScreen> {
     final int ratingInt = rating != null ? rating.round() : 0;
 
     return InkWell(
-      onTap: () {
-        Navigator.pushNamed(
+      onTap: () async {
+        final result = await Navigator.pushNamed(
           context,
           ProductDetailScreen.routeName,
           arguments: {'productId': productId},
         );
+        if (result == true) {
+          await _loadCartCount();
+        }
       },
       child: Container(
       width: isGrid ? 160 : 160,
@@ -543,31 +778,54 @@ class _HomepageScreenState extends State<HomepageScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Product Image
+          // Product Image with Favorite Button
           Expanded(
             flex: 2,
-            child: Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(12),
-                  topRight: Radius.circular(12),
+            child: Stack(
+              children: [
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: imageUrl != null
+                      ? ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(12),
+                            topRight: Radius.circular(12),
+                          ),
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+                          ),
+                        )
+                      : _buildPlaceholderImage(),
                 ),
-              ),
-              child: imageUrl != null
-                  ? ClipRRect(
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(12),
-                        topRight: Radius.circular(12),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: InkWell(
+                    onTap: () => _toggleFavorite(productId, product),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        shape: BoxShape.circle,
                       ),
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+                      child: Icon(
+                        isFavorite ? Icons.favorite : Icons.favorite_border,
+                        size: 18,
+                        color: isFavorite ? Colors.red : Colors.grey,
                       ),
-                    )
-                  : _buildPlaceholderImage(),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           // Product Info
@@ -680,6 +938,37 @@ class _HomepageScreenState extends State<HomepageScreen> {
                       style: AppTextStyles.caption.copyWith(fontSize: 9),
                     ),
                   ],
+                  // Add to Cart Button
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isAddingToCart
+                          ? null
+                          : () => _addToCart(productId, variationId: variationId),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      child: _isAddingToCart
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                              ),
+                            )
+                          : const Text(
+                              'Add to Cart',
+                              style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+                            ),
+                    ),
+                  ),
                   ],
                 ),
               ),
@@ -687,6 +976,161 @@ class _HomepageScreenState extends State<HomepageScreen> {
           ),
         ],
       ),
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isSearching) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+    }
+
+    if (_searchProducts.isEmpty) {
+      return Center(
+        child: Text(
+          'No products found',
+          style: AppTextStyles.body2.copyWith(color: AppColors.textSecondary),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.symmetric(
+        horizontal: Responsive.width(context, 0.04),
+        vertical: 16,
+      ),
+      itemCount: _searchProducts.length,
+      itemBuilder: (context, index) {
+        final product = _searchProducts[index];
+        return _buildSearchProductCard(product);
+      },
+    );
+  }
+
+  Widget _buildSearchProductCard(Map<String, dynamic> product) {
+    final int productId = product['id'] as int? ?? 0;
+    final String name = product['name'] ?? 'Product Name';
+    final String? imageUrl = product['image']?.toString();
+    final double price = product['price'] as double? ?? 0.0;
+    final double regularPrice = product['regular_price'] as double? ?? 0.0;
+    final bool hasDiscount = regularPrice > price && regularPrice > 0;
+    final bool isFavorite = product['is_favorite'] ?? false;
+
+    return InkWell(
+      onTap: () async {
+        final result = await Navigator.pushNamed(
+          context,
+          ProductDetailScreen.routeName,
+          arguments: {'productId': productId},
+        );
+        if (result == true) {
+          await _loadCartCount();
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: imageUrl != null && imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildPlaceholderImage(),
+                    )
+                  : SizedBox(
+                      width: 80,
+                      height: 80,
+                      child: _buildPlaceholderImage(),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: AppTextStyles.body1.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        '₹${price.toStringAsFixed(2)}',
+                        style: AppTextStyles.body1.copyWith(
+                          color: Colors.red,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (hasDiscount) ...[
+                        const SizedBox(width: 8),
+                        Text(
+                          '₹${regularPrice.toStringAsFixed(2)}',
+                          style: AppTextStyles.caption.copyWith(
+                            decoration: TextDecoration.lineThrough,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              children: [
+                InkWell(
+                  onTap: () => _toggleFavorite(productId, product),
+                  child: Icon(
+                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: isFavorite ? Colors.red : Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: _isAddingToCart
+                      ? null
+                      : () => _addToCart(productId),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: _isAddingToCart
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                          ),
+                        )
+                      : const Text(
+                          'Add',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                        ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -725,24 +1169,9 @@ class _HomepageScreenState extends State<HomepageScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Recently Viewed',
-              style: AppTextStyles.heading2,
-            ),
-            TextButton(
-              onPressed: () {},
-              child: Text(
-                'View All',
-                style: AppTextStyles.body2.copyWith(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+        Text(
+          'Recently Viewed',
+          style: AppTextStyles.heading2,
         ),
         Spacing.sizedBoxH12,
         SizedBox(

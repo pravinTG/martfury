@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../utils/cart_counter.dart';
 import '../widgets/spacing.dart';
-import '../utils/responsive.dart';
-import '../services/auth_service.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'update_profile_screen.dart';
 
 class MenuScreen extends StatelessWidget {
   static const String routeName = '/menu';
@@ -15,25 +15,53 @@ class MenuScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = AuthService();
     final user = authService.currentUser;
+    final userLabel = user?.phoneNumber ?? 'johnsmith_23';
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: Responsive.width(context, 0.04),
-            vertical: Responsive.height(context, 0.02),
-          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Spacing.sizedBoxH16,
-              // Profile Section
-              _buildProfileSection(user?.phoneNumber ?? 'User'),
-              Spacing.sizedBoxH32,
-              // Menu Items
-              _buildMenuSection(context),
-              Spacing.sizedBoxH80,
+              _buildHeader(context, userLabel),
+              Container(
+                color: AppColors.background,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _sectionHeader(title: 'My Orders', actionText: 'View All', onActionTap: () {}),
+                      Spacing.sizedBoxH12,
+                      _buildOrderRow(),
+                      Spacing.sizedBoxH20,
+                      _buildListCard([
+                        _MenuTileData(icon: Icons.person_outline, title: 'My Profile', onTap: () async => Navigator.pushNamed(context, UpdateProfileScreen.routeName)),
+                        _MenuTileData(icon: Icons.location_on_outlined, title: 'Manage Address', onTap: () {}),
+                        _MenuTileData(icon: Icons.account_balance_wallet_outlined, title: 'My Wallet', onTap: () {}),
+                        _MenuTileData(icon: Icons.card_giftcard, title: 'My Coupons', onTap: () {}),
+                        _MenuTileData(icon: Icons.visibility_outlined, title: 'Recently Viewed', onTap: () {}),
+                      ]),
+                      Spacing.sizedBoxH24,
+                      _sectionHeader(title: 'Support'),
+                      Spacing.sizedBoxH12,
+                      _buildListCard([
+                        _MenuTileData(icon: Icons.help_outline, title: 'Help Center', onTap: () {}),
+                        _MenuTileData(icon: Icons.support_agent, title: 'Customer Service', onTap: () {}),
+                        _MenuTileData(icon: Icons.article_outlined, title: 'Martfury Blog', onTap: () {}),
+                      ]),
+                      Spacing.sizedBoxH24,
+                      _sectionHeader(title: 'Setting'),
+                      Spacing.sizedBoxH12,
+                      _buildListCard([
+                        _MenuTileData(icon: Icons.attach_money, title: 'Currency', onTap: () {}),
+                        _MenuTileData(icon: Icons.language, title: 'Language', onTap: () {}),
+                      ]),
+                      Spacing.sizedBoxH24,
+                    ],
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -41,86 +69,214 @@ class MenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProfileSection(String phoneNumber) {
+  Widget _buildHeader(BuildContext context, String userLabel) {
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primaryDark],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 20),
+      decoration: const BoxDecoration(color: Color(0xFFFCC72C)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: Colors.white,
-            child: Icon(
-              Icons.person,
-              size: 30,
-              color: AppColors.primary,
-            ),
-          ),
-          Spacing.sizedBoxW16,
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Welcome!',
-                  style: AppTextStyles.heading2.copyWith(
-                    color: Colors.black,
-                  ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => Navigator.pushNamed(context, UpdateProfileScreen.routeName),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    CircleAvatar(
+                      radius: 26,
+                      backgroundColor: Colors.white,
+                      child: const Icon(Icons.person_outline, color: Colors.grey, size: 28),
+                    ),
+                    Positioned(
+                      right: -2,
+                      bottom: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                        child: const Icon(Icons.edit, size: 12, color: Colors.black87),
+                      ),
+                    ),
+                  ],
                 ),
-                Spacing.sizedBoxH4,
-                Text(
-                  phoneNumber,
-                  style: AppTextStyles.body1.copyWith(
-                    color: Colors.black87,
-                  ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      userLabel,
+                      style: AppTextStyles.heading3.copyWith(color: Colors.black),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.storefront, size: 16),
+                          SizedBox(width: 6),
+                          Text('My Shop'),
+                          SizedBox(width: 6),
+                          Icon(Icons.chevron_right, size: 16),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 6),
+              _iconWithBadge(
+                icon: Icons.shopping_bag_outlined,
+                count: CartCounter.cartCount,
+                onTap: () {},
+              ),
+              _iconWithBadge(
+                icon: Icons.notifications_outlined,
+                onTap: () {},
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMenuSection(BuildContext context) {
-    final menuItems = [
-      {'icon': Icons.person_outline, 'title': 'My Profile', 'onTap': () {}},
-      {'icon': Icons.shopping_bag_outlined, 'title': 'My Orders', 'onTap': () {}},
-      {'icon': Icons.location_on_outlined, 'title': 'Addresses', 'onTap': () {}},
-      {'icon': Icons.payment_outlined, 'title': 'Payment Methods', 'onTap': () {}},
-      {'icon': Icons.notifications_outlined, 'title': 'Notifications', 'onTap': () {}},
-      {'icon': Icons.settings_outlined, 'title': 'Settings', 'onTap': () {}},
-      {'icon': Icons.help_outline, 'title': 'Help & Support', 'onTap': () {}},
-      {'icon': Icons.info_outline, 'title': 'About Us', 'onTap': () {}},
+  Widget _sectionHeader({required String title, String? actionText, VoidCallback? onActionTap}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          title,
+          style: AppTextStyles.heading3.copyWith(fontSize: 16),
+        ),
+        if (actionText != null)
+          GestureDetector(
+            onTap: onActionTap,
+            child: Text(
+              actionText,
+              style: AppTextStyles.body2.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildOrderRow() {
+    final orders = [
+      {'icon': Icons.inventory_2_outlined, 'label': 'Ongoing'},
+      {'icon': Icons.checklist_rtl, 'label': 'Completed'},
+      {'icon': Icons.rate_review_outlined, 'label': 'Reviews'},
+      {'icon': Icons.assignment_return, 'label': 'Returns'},
     ];
 
-    return Column(
-      children: menuItems.map((item) {
-        return ListTile(
-          leading: Icon(
-            item['icon'] as IconData,
-            color: AppColors.textPrimary,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: orders.map((item) {
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Column(
+              children: [
+                Container(
+                  height: 56,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF3CC),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(item['icon'] as IconData, color: Colors.orange.shade700),
+                ),
+                Spacing.sizedBoxH8,
+                Text(
+                  item['label'] as String,
+                  style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
-          title: Text(
-            item['title'] as String,
-            style: AppTextStyles.body1,
-          ),
-          trailing: const Icon(
-            Icons.chevron_right,
-            color: AppColors.textSecondary,
-          ),
-          onTap: item['onTap'] as VoidCallback,
         );
       }).toList(),
     );
   }
 
+  Widget _buildListCard(List<_MenuTileData> items) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          for (int i = 0; i < items.length; i++) ...[
+            ListTile(
+              leading: Icon(items[i].icon, color: AppColors.textPrimary),
+              title: Text(items[i].title, style: AppTextStyles.body1),
+              trailing: const Icon(Icons.chevron_right, color: AppColors.textSecondary),
+              onTap: items[i].onTap,
+            ),
+            if (i != items.length - 1)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16),
+                child: Divider(height: 1),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _iconWithBadge({required IconData icon, int count = 0, VoidCallback? onTap}) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          onPressed: onTap,
+          icon: Icon(icon, color: Colors.black87),
+        ),
+        if (count > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+              child: Text(
+                count > 99 ? '99+' : '$count',
+                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
 
+class _MenuTileData {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+
+  const _MenuTileData({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+  });
+}

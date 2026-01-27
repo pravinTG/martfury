@@ -8,7 +8,6 @@ import '../services/api_endpoints.dart';
 import '../services/session_manager.dart';
 import '../utils/safe_print.dart';
 import '../utils/custom_snackbar.dart';
-import '../utils/cart_counter.dart';
 import 'main_tabs_screen.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -35,6 +34,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String? _selectedVariation;
   int _selectedVariationIndex = 0;
   int _quantity = 1;
+  int _cartCount = 2;
   bool _isWishlisted = false;
   bool _isAddingToCart = false;
   bool _isTogglingFavorite = false;
@@ -452,7 +452,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 icon: const Icon(Icons.shopping_bag_outlined, color: Colors.black),
                 onPressed: () {},
               ),
-              if (CartCounter.cartCount > 0)
+              if (_cartCount > 0)
                 Positioned(
                   right: 8,
                   top: 8,
@@ -463,7 +463,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: Text(
-                      '${CartCounter.cartCount}',
+                      '$_cartCount',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 10,
@@ -1458,8 +1458,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           isError: false,
         );
         
-        // Update cart counter
-        CartCounter.loadCartCount();
+        // Update cart count (you can implement a cart counter provider here)
+        setState(() {
+          _cartCount++;
+        });
 
         if (navigateToCart) {
           // Navigate to cart tab in main tabs

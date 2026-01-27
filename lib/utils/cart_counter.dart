@@ -8,7 +8,7 @@ import 'dart:convert';
 class CartCounter {
   static int _cartCount = 0;
   static double _cartTotal = 0.0;
-  
+
   static int get cartCount => _cartCount;
   static double get cartTotal => _cartTotal;
 
@@ -34,30 +34,37 @@ class CartCounter {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         
+        int newCount = 0;
+        double newTotal = 0.0;
+
         if (data is Map && data['status'] == true) {
-          // Parse cart_totals
           if (data['cart_totals'] != null && data['cart_totals'] is Map) {
             final totals = data['cart_totals'] as Map<String, dynamic>;
-            _cartCount = int.tryParse(totals['total_items']?.toString() ?? '0') ?? 0;
-            _cartTotal = double.tryParse(totals['total']?.toString() ?? '0') ?? 0.0;
+            newCount = int.tryParse(totals['total_items']?.toString() ?? '0') ?? 0;
+            newTotal = double.tryParse(totals['total']?.toString() ?? '0') ?? 0.0;
           }
           
-          // Also check cart_items length as fallback
-          if (_cartCount == 0 && data['cart_items'] != null && data['cart_items'] is List) {
+          if (newCount == 0 && data['cart_items'] != null && data['cart_items'] is List) {
             final items = data['cart_items'] as List;
-            int totalItems = 0;
-            double total = 0.0;
             for (var item in items) {
               final qty = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
-              totalItems += qty;
+              newCount += qty;
               final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0.0;
-              total += price * qty;
+              newTotal += price * qty;
             }
-            _cartCount = totalItems;
-            _cartTotal = total;
+          }
+        } else if (data is List) {
+          // If the API returns a direct list of items without totals
+          for (var item in data) {
+            final qty = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+            newCount += qty;
+            final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0.0;
+            newTotal += price * qty;
           }
         }
         
+        _cartCount = newCount;
+        _cartTotal = newTotal;
         safePrint('🛒 Cart count loaded: $_cartCount, Total: $_cartTotal');
       }
     } catch (e) {
@@ -71,22 +78,26 @@ class CartCounter {
     if (total != null) {
       _cartTotal = total;
     }
+    safePrint('🛒 Cart count updated manually: $_cartCount, Total: $_cartTotal');
   }
 
   /// Increment cart count
   static void increment({int by = 1}) {
     _cartCount += by;
+    safePrint('🛒 Cart count incremented to: $_cartCount');
   }
 
   /// Decrement cart count
   static void decrement({int by = 1}) {
     _cartCount = (_cartCount - by).clamp(0, double.infinity).toInt();
+    safePrint('🛒 Cart count decremented to: $_cartCount');
   }
 
   /// Reset cart count
   static void reset() {
     _cartCount = 0;
     _cartTotal = 0.0;
+    safePrint('🛒 Cart count reset');
   }
 }
 

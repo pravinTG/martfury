@@ -8,7 +8,6 @@ import '../services/api_endpoints.dart';
 import '../services/session_manager.dart';
 import '../utils/safe_print.dart';
 import '../utils/custom_snackbar.dart';
-import '../utils/cart_counter.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class CartScreen extends StatefulWidget {
@@ -128,13 +127,10 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         final data = jsonDecode(response.body);
         safePrint('Cart API response: $data');
 
-        // Parse response structure: {status: true, cart_items: [...], cart_totals: {...}}
+        // Handle different response formats
         List<Map<String, dynamic>> items = [];
-        if (data is Map && data['status'] == true) {
-          // Parse cart_items
-          if (data['cart_items'] != null && data['cart_items'] is List) {
-            items = List<Map<String, dynamic>>.from(data['cart_items']);
-          } else if (data['items'] != null && data['items'] is List) {
+        if (data is Map) {
+          if (data['items'] != null && data['items'] is List) {
             items = List<Map<String, dynamic>>.from(data['items']);
           } else if (data['cart'] != null && data['cart'] is List) {
             items = List<Map<String, dynamic>>.from(data['cart']);
@@ -142,23 +138,12 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
             items = List<Map<String, dynamic>>.from(data['data']);
           }
           
-          // Parse cart_totals
-          if (data['cart_totals'] != null && data['cart_totals'] is Map) {
-            final totals = data['cart_totals'] as Map<String, dynamic>;
-            if (totals['total'] != null) {
-              _totalAmount = double.tryParse(totals['total'].toString()) ?? 0.0;
-            }
-            if (totals['total_items'] != null) {
-              _totalItems = int.tryParse(totals['total_items'].toString()) ?? 0;
-            }
-          } else {
-            // Fallback to root level totals
-            if (data['total'] != null) {
-              _totalAmount = double.tryParse(data['total'].toString()) ?? 0.0;
-            }
-            if (data['total_items'] != null) {
-              _totalItems = int.tryParse(data['total_items'].toString()) ?? 0;
-            }
+          // Update totals if available
+          if (data['total'] != null) {
+            _totalAmount = double.tryParse(data['total'].toString()) ?? 0.0;
+          }
+          if (data['total_items'] != null) {
+            _totalItems = int.tryParse(data['total_items'].toString()) ?? 0;
           }
         } else if (data is List) {
           items = List<Map<String, dynamic>>.from(data);
@@ -175,15 +160,9 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         });
 
         // Calculate total if not provided by API
-        if (_totalAmount == 0.0 && _cartItems.isNotEmpty) {
+        if (_totalAmount == 0.0) {
           _calculateTotal();
         }
-        
-        // Update cart counter
-        CartCounter.updateCartCount(_totalItems, total: _totalAmount);
-        
-        safePrint('🛒 Parsed ${items.length} cart items');
-        safePrint('🛒 Total: $_totalAmount, Total Items: $_totalItems');
       } else {
         setState(() {
           _isLoading = false;
@@ -226,11 +205,8 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
         final data = jsonDecode(response.body);
         List<Map<String, dynamic>> items = [];
         
-        // Parse response structure: {status: true, cart_items: [...], cart_totals: {...}}
-        if (data is Map && data['status'] == true) {
-          if (data['cart_items'] != null && data['cart_items'] is List) {
-            items = List<Map<String, dynamic>>.from(data['cart_items']);
-          } else if (data['items'] != null && data['items'] is List) {
+        if (data is Map) {
+          if (data['items'] != null && data['items'] is List) {
             items = List<Map<String, dynamic>>.from(data['items']);
           } else if (data['cart'] != null && data['cart'] is List) {
             items = List<Map<String, dynamic>>.from(data['cart']);
@@ -324,22 +300,18 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
       final response = await ApiService.posts(
         ApiEndpoints.cartUpdate,
         {
-          'product_id': item['product_id']?.toString(),
-          'variation_id': item['variation_id']?.toString() ?? '0',
+          'cart_item_key': item['key'] ?? item['id']?.toString(),
           'quantity': 0,
         },
         token: token,
       );
 
       if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        if (responseData['status'] == true) {
-          // Reload cart to get updated data
-          await _loadCartItems(refresh: true);
-          CustomSnackBar.show(context, 'Item removed from cart', isError: false);
-        } else {
-          CustomSnackBar.show(context, responseData['message'] ?? 'Failed to remove item', isError: true);
-        }
+        setState(() {
+          _cartItems.removeAt(index);
+        });
+        _calculateTotal();
+        CustomSnackBar.show(context, 'Item removed from cart', isError: false);
       } else {
         CustomSnackBar.show(context, 'Failed to remove item', isError: true);
       }
@@ -431,16 +403,9 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
     final productName = item['name'] ?? item['product_name'] ?? 'Product';
     final quantity = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
     final price = double.tryParse(item['price']?.toString() ?? '0') ?? 0.0;
-    final subtotal = double.tryParse(item['subtotal']?.toString() ?? '0') ?? (price * quantity);
-    final lineTotal = subtotal > 0 ? subtotal : (price * quantity);
-    final imageUrl = item['image']?.toString() ?? item['product_image']?.toString() ?? '';
-    final variation = item['variation'] ?? [];
-    final productId = item['product_id']?.toString() ?? '';
-    final variationId = item['variation_id']?.toString() ?? '0';
-    final stockStatus = item['stock_status']?.toString() ?? 'instock';
-    final isOutOfStock = stockStatus.toLowerCase() == 'outofstock' || stockStatus.toLowerCase() == 'out of stock';
-    final regularPrice = item['regular_price']?.toString();
-    final salePrice = item['sale_price']?.toString();
+    final lineTotal = double.tryParse(item['line_total']?.toString() ?? '0') ?? (price * quantity);
+    final imageUrl = item['image'] ?? item['product_image'] ?? '';
+    final variation = item['variation'] ?? {};
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -493,20 +458,10 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (variation != null && variation is List && (variation as List).isNotEmpty) ...[
+                if (variation.isNotEmpty) ...[
                   Spacing.sizedBoxH4,
                   Text(
-                    (variation as List).map((v) => v.toString()).join(', '),
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ] else if (variation != null && variation is Map && (variation as Map).isNotEmpty) ...[
-                  Spacing.sizedBoxH4,
-                  Text(
-                    (variation as Map).entries
+                    variation.entries
                         .map((e) => '${e.key}: ${e.value}')
                         .join(', '),
                     style: AppTextStyles.caption.copyWith(
@@ -514,24 +469,6 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                if (isOutOfStock) ...[
-                  Spacing.sizedBoxH4,
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Colors.red),
-                    ),
-                    child: Text(
-                      'Out of Stock',
-                      style: AppTextStyles.caption.copyWith(
-                        color: Colors.red,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                   ),
                 ],
                 Spacing.sizedBoxH8,
@@ -572,26 +509,15 @@ class CartScreenState extends State<CartScreen> with AutomaticKeepAliveClientMix
                         ],
                       ),
                     ),
-
-                    const SizedBox(width: 8),
-
-                    /// ✅ This pushes price to end safely
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '₹${lineTotal.toStringAsFixed(2)}',
-                            style: AppTextStyles.heading3.copyWith(
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
+                    const Spacer(),
+                    Text(
+                      '₹${lineTotal.toStringAsFixed(2)}',
+                      style: AppTextStyles.heading3.copyWith(
+                        color: AppColors.primary,
                       ),
                     ),
                   ],
-                )
+                ),
               ],
             ),
           ),
