@@ -12,10 +12,18 @@ import '../utils/custom_snackbar.dart';
 
 class AddEditAddressScreen extends StatefulWidget {
   final Map<String, dynamic>? address;
+  final String? AddressId;
+  final String? routename;
+  final String? discount;
+  final List<Map<String, dynamic>>? cartItems;
 
   const AddEditAddressScreen({
     super.key,
     this.address,
+    this.AddressId,
+    this.routename,
+    this.discount,
+    this.cartItems,
   });
 
   bool get isEdit => address != null && address!['id'] != null;
@@ -35,10 +43,21 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   final TextEditingController _address1Ctrl = TextEditingController();
   final TextEditingController _address2Ctrl = TextEditingController();
   final TextEditingController _cityCtrl = TextEditingController();
-  final TextEditingController _stateCtrl = TextEditingController();
   final TextEditingController _zipCtrl = TextEditingController();
 
-  String _country = 'United Kingdom (UK)';
+  String _addressType = 'Select';
+  final List<String> _addressTypes = ['Select', 'Home', 'Office', 'Other'];
+  
+  final List<String> _states = [
+    "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar",
+    "Chandigarh", "Chhattisgarh", "Dadra and Nagar Haveli", "Daman", "Delhi", "Diu", "Goa",
+    "Gujarat", "Haryana", "Himachal Pradesh", "Jammu & Kashmir", "Jharkhand", "Karnataka",
+    "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur",
+    "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan",
+    "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttarakhand", "Uttar Pradesh", "West Bengal",
+  ];
+  String _stateValue = "Maharashtra";
+  String _country = "IN";
   bool _isDefault = false;
   bool _isSaving = false;
 
@@ -60,8 +79,9 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     _address1Ctrl.text = addr['address_1']?.toString() ?? '';
     _address2Ctrl.text = addr['address_2']?.toString() ?? '';
     _cityCtrl.text = addr['city']?.toString() ?? '';
-    _stateCtrl.text = addr['state']?.toString() ?? '';
+    _stateValue = addr['state']?.toString() ?? _stateValue;
     _zipCtrl.text = addr['postcode']?.toString() ?? '';
+    _addressType = addr['address_type']?.toString() ?? 'Select';
     _country = addr['country']?.toString().isNotEmpty == true
         ? addr['country'].toString()
         : _country;
@@ -79,7 +99,6 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     _address1Ctrl.dispose();
     _address2Ctrl.dispose();
     _cityCtrl.dispose();
-    _stateCtrl.dispose();
     _zipCtrl.dispose();
     super.dispose();
   }
@@ -103,19 +122,20 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         return;
       }
 
-      final body = {
-        'first_name': _firstNameCtrl.text.trim(),
-        'last_name': _lastNameCtrl.text.trim(),
-        'company': _companyCtrl.text.trim(),
-        'email': _emailCtrl.text.trim(),
-        'phone': _phoneCtrl.text.trim(),
-        'address_1': _address1Ctrl.text.trim(),
-        'address_2': _address2Ctrl.text.trim(),
-        'city': _cityCtrl.text.trim(),
-        'state': _stateCtrl.text.trim(),
-        'postcode': _zipCtrl.text.trim(),
-        'country': _country,
-        'is_default': _isDefault ? 1 : 0,
+      final Map<String, dynamic> body = {
+        "address": {
+          "first_name": _firstNameCtrl.text.trim(),
+          "last_name": _lastNameCtrl.text.trim(),
+          "email": _emailCtrl.text.trim(),
+          "address_1": _address1Ctrl.text.trim(),
+          "address_2": _address2Ctrl.text.trim(),
+          "city": _cityCtrl.text.trim(),
+          "state": _stateValue,
+          "postcode": _zipCtrl.text.trim(),
+          "country": _country,
+          "phone": _phoneCtrl.text.trim(),
+          "address_type": _addressType,
+        }
       };
 
       final bool isEdit = widget.isEdit;
@@ -132,13 +152,32 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       if (response.statusCode == 200 || response.statusCode == 201) {
         CustomSnackBar.show(
           context,
-          isEdit ? 'Address updated successfully' : 'Address added successfully',
+          isEdit ? 'Address updated successfully!' : 'Address added successfully!',
           isError: false,
         );
 
-        final decoded = jsonDecode(response.body);
-        Navigator.pop(context, decoded);
+        // Navigate back or to shipping addresses screen if routename provided
+        if (widget.routename != null && widget.cartItems != null) {
+          // TODO: Import ShippingAddresses screen and navigate to it
+          // Navigator.pushAndRemoveUntil(
+          //   context,
+          //   MaterialPageRoute(
+          //     builder: (context) => ShippingAddresses(
+          //       navigationValue: widget.routename!,
+          //       cartItems: widget.cartItems!,
+          //       discount: widget.discount,
+          //     ),
+          //   ),
+          //   (route) => false,
+          // );
+          final decoded = jsonDecode(response.body);
+          Navigator.pop(context, decoded);
+        } else {
+          final decoded = jsonDecode(response.body);
+          Navigator.pop(context, decoded);
+        }
       } else {
+        print('Failed to save address: ${response.body}');
         CustomSnackBar.show(
           context,
           'Failed to save address (${response.statusCode})',
@@ -171,7 +210,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          widget.isEdit ? 'Edit Delivery Address' : 'Add Delivery Address',
+          widget.isEdit ? 'Edit Delivery Address' : 'Add New Address',
           style: AppTextStyles.heading3,
         ),
         centerTitle: false,
@@ -186,26 +225,14 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Country / Region
+                    // Address Type
                     Text(
-                      'Country / Region',
+                      'Address Type',
                       style: AppTextStyles.caption
                           .copyWith(color: AppColors.textSecondary),
                     ),
                     const SizedBox(height: 8),
-                    _buildDropdownField<String>(
-                      value: _country,
-                      items: const [
-                        'United Kingdom (UK)',
-                        'India (IN)',
-                        'United States (US)',
-                      ],
-                      onChanged: (val) {
-                        if (val != null) {
-                          setState(() => _country = val);
-                        }
-                      },
-                    ),
+                    _buildAddressTypeDropdown(),
                     const SizedBox(height: 24),
 
                     // Contact Information
@@ -290,13 +317,13 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    _buildLabel('State / Province *'),
-                    _buildTextField(
-                      controller: _stateCtrl,
-                      hint: 'State/Province',
-                      validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Required' : null,
+                    Text(
+                      'Select State',
+                      style: AppTextStyles.caption
+                          .copyWith(color: AppColors.textSecondary),
                     ),
+                    const SizedBox(height: 8),
+                    _buildStateDropdown(),
                     const SizedBox(height: 16),
 
                     _buildLabel('City *'),
@@ -518,6 +545,90 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildAddressTypeDropdown() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: DropdownButtonFormField<String>(
+        value: _addressType,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.1),
+          labelText: "Address Type",
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: Colors.grey),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: Colors.grey),
+          ),
+        ),
+        validator: (value) =>
+            value == "Select" ? "Please select address type" : null,
+        items: _addressTypes.map((String item) {
+          return DropdownMenuItem<String>(
+            value: item,
+            child: Text(item),
+          );
+        }).toList(),
+        onChanged: (val) {
+          if (val != null) {
+            setState(() => _addressType = val);
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildStateDropdown() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9F9F9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: DropdownButtonFormField<String>(
+        value: _stateValue,
+        decoration: InputDecoration(
+          filled: true,
+          fillColor: Colors.white.withOpacity(0.1),
+          labelText: "Select State",
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: Colors.grey),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(20),
+            borderSide: const BorderSide(color: Colors.grey),
+          ),
+        ),
+        validator: (value) =>
+            value == null || value.isEmpty ? 'Please select a state' : null,
+        items: _states.map((String state) {
+          return DropdownMenuItem<String>(
+            value: state,
+            child: Text(state),
+          );
+        }).toList(),
+        onChanged: (value) {
+          if (value != null) {
+            setState(() => _stateValue = value);
+          }
+        },
       ),
     );
   }

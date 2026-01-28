@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/cart_counter.dart';
 import '../widgets/spacing.dart';
 import 'update_profile_screen.dart';
+import 'order_history_screen.dart';
 
 class MenuScreen extends StatelessWidget {
   static const String routeName = '/menu';
@@ -13,6 +15,8 @@ class MenuScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Ensure badge is up-to-date when menu is opened
+    CartCounter.loadCartCount();
     final authService = AuthService();
     final user = authService.currentUser;
     final userLabel = user?.phoneNumber ?? 'johnsmith_23';
@@ -31,9 +35,16 @@ class MenuScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _sectionHeader(title: 'My Orders', actionText: 'View All', onActionTap: () {}),
+                      _sectionHeader(
+                        title: 'My Orders',
+                        actionText: 'View All',
+                        onActionTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
+                        ),
+                      ),
                       Spacing.sizedBoxH12,
-                      _buildOrderRow(),
+                      _buildOrderRow(context),
                       Spacing.sizedBoxH20,
                       _buildListCard([
                         _MenuTileData(icon: Icons.person_outline, title: 'My Profile', onTap: () async => Navigator.pushNamed(context, UpdateProfileScreen.routeName)),
@@ -86,11 +97,7 @@ class MenuScreen extends StatelessWidget {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    CircleAvatar(
-                      radius: 26,
-                      backgroundColor: Colors.white,
-                      child: const Icon(Icons.person_outline, color: Colors.grey, size: 28),
-                    ),
+                    _profileAvatar(),
                     Positioned(
                       right: -2,
                       bottom: -2,
@@ -136,7 +143,7 @@ class MenuScreen extends StatelessWidget {
               const SizedBox(width: 6),
               _iconWithBadge(
                 icon: Icons.shopping_bag_outlined,
-                count: CartCounter.cartCount,
+                countListenable: CartCounter.cartCountNotifier,
                 onTap: () {},
               ),
               _iconWithBadge(
@@ -170,7 +177,7 @@ class MenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildOrderRow() {
+  Widget _buildOrderRow(BuildContext context) {
     final orders = [
       {'icon': Icons.inventory_2_outlined, 'label': 'Ongoing'},
       {'icon': Icons.checklist_rtl, 'label': 'Completed'},
@@ -193,7 +200,25 @@ class MenuScreen extends StatelessWidget {
                     color: const Color(0xFFFFF3CC),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(item['icon'] as IconData, color: Colors.orange.shade700),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      final label = item['label'] as String;
+                      if (label == 'Reviews') return;
+                      final initialTab = label == 'Ongoing'
+                          ? 'In Progress'
+                          : label == 'Completed'
+                              ? 'Delivered'
+                              : 'Returns';
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OrderHistoryScreen(initialTab: initialTab),
+                        ),
+                      );
+                    },
+                    child: Icon(item['icon'] as IconData, color: Colors.orange.shade700),
+                  ),
                 ),
                 Spacing.sizedBoxH8,
                 Text(
@@ -243,7 +268,12 @@ class MenuScreen extends StatelessWidget {
     );
   }
 
-  Widget _iconWithBadge({required IconData icon, int count = 0, VoidCallback? onTap}) {
+  Widget _iconWithBadge({
+    required IconData icon,
+    ValueListenable<int>? countListenable,
+    int count = 0,
+    VoidCallback? onTap,
+  }) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -251,7 +281,26 @@ class MenuScreen extends StatelessWidget {
           onPressed: onTap,
           icon: Icon(icon, color: Colors.black87),
         ),
-        if (count > 0)
+        if (countListenable != null)
+          ValueListenableBuilder<int>(
+            valueListenable: countListenable,
+            builder: (context, value, _) {
+              if (value <= 0) return const SizedBox.shrink();
+              return Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(color: Colors.black87, shape: BoxShape.circle),
+                  child: Text(
+                    value > 99 ? '99+' : '$value',
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              );
+            },
+          )
+        else if (count > 0)
           Positioned(
             right: 6,
             top: 6,
@@ -265,6 +314,25 @@ class MenuScreen extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _profileAvatar() {
+    final authService = AuthService();
+    final user = authService.currentUser;
+    final photoUrl = user?.photoURL ?? '';
+
+    if (photoUrl.trim().isNotEmpty) {
+      return CircleAvatar(
+        radius: 26,
+        backgroundColor: Colors.white,
+        backgroundImage: NetworkImage(photoUrl),
+      );
+    }
+    return const CircleAvatar(
+      radius: 26,
+      backgroundColor: Colors.white,
+      child: Icon(Icons.person_outline, color: Colors.grey, size: 28),
     );
   }
 }

@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/spacing.dart';
+import '../services/api_service.dart';
 import 'delivery_address_screen.dart';
 
 class CheckoutScreen extends StatefulWidget {
@@ -22,12 +25,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   String _selectedShippingMethod = 'standard';
   String _selectedPaymentMethod = 'razorpay';
 
-  // Selected address (matches design in screenshots)
-  Map<String, String> _selectedAddress = {
-    'name': 'John Smith',
-    'phone': '020-7946-0000',
-    'addressLine1': '10 Downing Street, London, SW1A 2AA',
-  };
+  // Selected address (must be set before proceeding)
+  Map<String, String> _selectedAddress = {};
+
+  // Coupons
+  final TextEditingController _couponCodeController = TextEditingController();
+  List<Map<String, dynamic>> _coupons = [];
+  bool _isCouponsLoading = false;
+  bool _couponApplied = false;
+  String? _appliedCouponCode;
+  double _couponAmount = 0.0;
 
   @override
   void initState() {
@@ -36,11 +43,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
     _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    _fetchCoupons();
   }
 
   @override
   void dispose() {
     _razorpay.clear();
+    _couponCodeController.dispose();
     super.dispose();
   }
 
@@ -77,7 +86,151 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  bool get _hasAddress =>
+      (_selectedAddress['name']?.trim().isNotEmpty ?? false) &&
+      (_selectedAddress['phone']?.trim().isNotEmpty ?? false) &&
+      (_selectedAddress['addressLine1']?.trim().isNotEmpty ?? false);
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _fetchCoupons() async {
+    setState(() => _isCouponsLoading = true);
+    try {
+      final response = await ApiService.gets('/coupons');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is List) {
+          setState(() {
+            _coupons = data.map<Map<String, dynamic>>((c) {
+              final m = c is Map ? Map<String, dynamic>.from(c) : <String, dynamic>{};
+              return {
+                'id': m['id'],
+                'code': m['code'],
+                'amount': m['amount'],
+                'discount_type': m['discount_type'],
+                'description': m['description'],
+                'date_expires': m['date_expires'],
+              };
+            }).toList();
+          });
+        }
+      }
+    } catch (e) {
+      // silent; user can still checkout without coupon
+    } finally {
+      if (mounted) setState(() => _isCouponsLoading = false);
+    }
+  }
+
+  double _safeToDouble(dynamic value) {
+    if (value == null) return 0.0;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value.toString()) ?? 0.0;
+  }
+
+  Future<void> _applyCoupon() async {
+    final code = _couponCodeController.text.trim();
+    if (code.isEmpty) {
+      _snack('Please enter a coupon code');
+      return;
+    }
+
+    final coupon = _coupons.firstWhere(
+      (c) => (c['code']?.toString().toLowerCase() ?? '') == code.toLowerCase(),
+      orElse: () => {},
+    );
+
+    if (coupon.isEmpty || coupon['id'] == null) {
+      _snack('Invalid coupon code');
+      return;
+    }
+
+    setState(() => _isCouponsLoading = true);
+    try {
+      final couponId = coupon['id'];
+      final response = await ApiService.puts(
+        '/coupons/$couponId',
+        {},
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _appliedCouponCode = code;
+          _couponAmount = _safeToDouble(coupon['amount']);
+          _couponApplied = true;
+        });
+        _couponCodeController.clear();
+        final data = jsonDecode(response.body);
+        _snack(data is Map && data['message'] != null ? data['message'].toString() : 'Coupon applied successfully!');
+      } else {
+        final data = jsonDecode(response.body);
+        _snack(data is Map && data['message'] != null ? data['message'].toString() : 'Failed to apply coupon');
+      }
+    } catch (e) {
+      _snack('Something went wrong');
+    } finally {
+      if (mounted) setState(() => _isCouponsLoading = false);
+    }
+  }
+
+  Future<void> _removeCoupon() async {
+    if (_appliedCouponCode == null) {
+      _snack('No coupon to remove');
+      return;
+    }
+
+    final coupon = _coupons.firstWhere(
+      (c) => (c['code']?.toString().toLowerCase() ?? '') ==
+          _appliedCouponCode!.toLowerCase(),
+      orElse: () => {},
+    );
+
+    if (coupon.isEmpty || coupon['id'] == null) {
+      setState(() {
+        _appliedCouponCode = null;
+        _couponAmount = 0.0;
+        _couponApplied = false;
+      });
+      return;
+    }
+
+    setState(() => _isCouponsLoading = true);
+    try {
+      final couponId = coupon['id'];
+      final response = await ApiService.deletes(
+        '/coupons/$couponId',
+        {},
+      );
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _appliedCouponCode = null;
+          _couponAmount = 0.0;
+          _couponApplied = false;
+        });
+        _snack('Coupon removed successfully!');
+      } else {
+        final data = jsonDecode(response.body);
+        _snack(data is Map && data['message'] != null ? data['message'].toString() : 'Failed to remove coupon');
+      }
+    } catch (e) {
+      _snack('Something went wrong');
+    } finally {
+      if (mounted) setState(() => _isCouponsLoading = false);
+    }
+  }
+
   void _openRazorpay(double amount) {
+    if (!_hasAddress) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please add/select address first')),
+      );
+      _changeAddress();
+      return;
+    }
     final int amountInPaise = (amount * 100).round();
 
     final options = {
@@ -109,7 +262,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     final double deliveryFee =
         _selectedShippingMethod == 'standard' ? 10.0 : 19.0;
-    const double couponDiscount = 25.0;
+    final double couponDiscount = _couponApplied ? _couponAmount : 0.0;
     final double subtotal = totalAmount;
     final double totalPayable =
         (subtotal + deliveryFee - couponDiscount).clamp(0, double.infinity);
@@ -162,19 +315,50 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
+                    child: !_hasAddress
+                        ? Row(
+                            children: [
+                              const Icon(
+                                Icons.location_on_outlined,
+                                color: Colors.orange,
+                              ),
+                              Spacing.sizedBoxW12,
+                              Expanded(
+                                child: Text(
+                                  'No address selected',
+                                  style: AppTextStyles.body2.copyWith(
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _changeAddress,
+                                child: const Text('Add'),
+                              ),
+                            ],
+                          )
+                        : Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(
                           Icons.location_on_outlined,
                           color: Colors.orange,
                         ),
+
                         Spacing.sizedBoxW12,
+
+                        /// MAIN CONTENT
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
+
+                              /// NAME + PHONE (auto wraps)
+                              Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 8,
+                                runSpacing: 4,
                                 children: [
                                   Text(
                                     _selectedAddress['name'] ?? '',
@@ -182,14 +366,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  Spacing.sizedBoxW8,
                                   Text(
                                     '│',
                                     style: AppTextStyles.caption.copyWith(
                                       color: Colors.grey,
                                     ),
                                   ),
-                                  Spacing.sizedBoxW8,
                                   Text(
                                     _selectedAddress['phone'] ?? '',
                                     style: AppTextStyles.caption.copyWith(
@@ -198,7 +380,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   ),
                                 ],
                               ),
+
                               Spacing.sizedBoxH4,
+
+                              /// ADDRESS (multi-line by default)
                               Text(
                                 _selectedAddress['addressLine1'] ?? '',
                                 style: AppTextStyles.body2.copyWith(
@@ -208,13 +393,23 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             ],
                           ),
                         ),
-                        Spacing.sizedBoxW12,
+
+                        Spacing.sizedBoxW8,
+
+                        /// CHANGE BUTTON (kept compact)
                         TextButton(
                           onPressed: _changeAddress,
+                          style: TextButton.styleFrom(
+                            minimumSize: Size.zero,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
                           child: const Text('Change'),
                         ),
                       ],
                     ),
+
+
                   ),
                 ],
               ),
@@ -324,39 +519,68 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     style: AppTextStyles.heading3,
                   ),
                   Spacing.sizedBoxH8,
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Enter your code',
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
+                  if (_couponApplied && _appliedCouponCode != null)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Coupon: $_appliedCouponCode',
+                            style: AppTextStyles.body2.copyWith(
+                              fontWeight: FontWeight.w600,
                             ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _isCouponsLoading ? null : _removeCoupon,
+                          child: const Text(
+                            'Remove',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _couponCodeController,
+                            decoration: InputDecoration(
+                              hintText: 'Enter your code',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      Spacing.sizedBoxW8,
-                      ElevatedButton(
-                        onPressed: () {
-                          // TODO: Apply coupon logic
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.grey[200],
-                          foregroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 14,
+                        Spacing.sizedBoxW8,
+                        ElevatedButton(
+                          onPressed: _isCouponsLoading ? null : _applyCoupon,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.grey[200],
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
                           ),
+                          child: _isCouponsLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Apply'),
                         ),
-                        child: const Text('Apply'),
-                      ),
-                    ],
-                  ),
+                      ],
+                    ),
                   Spacing.sizedBoxH8,
                   Row(
                     children: [
@@ -372,7 +596,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ),
                       const Spacer(),
                       Text(
-                        '- \$${couponDiscount.toStringAsFixed(2)}',
+                        couponDiscount > 0
+                            ? '- \$${couponDiscount.toStringAsFixed(2)}'
+                            : '- \$0.00',
                         style: AppTextStyles.body2.copyWith(
                           color: Colors.red,
                         ),
@@ -615,7 +841,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           children: [
             if (oldPrice != null)
               Text(
-                '\$${oldPrice.toStringAsFixed(2)}',
+                '₹${oldPrice.toStringAsFixed(2)}',
                 style: AppTextStyles.caption.copyWith(
                   color: Colors.grey,
                   decoration: TextDecoration.lineThrough,
@@ -624,7 +850,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             if (oldPrice != null) Spacing.sizedBoxW4,
             Text(
               (isNegative ? '- ' : '') +
-                  '\$${amount.abs().toStringAsFixed(2)}',
+                  '₹${amount.abs().toStringAsFixed(2)}',
               style: valueStyle,
             ),
           ],

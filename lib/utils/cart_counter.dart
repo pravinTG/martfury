@@ -3,6 +3,7 @@ import '../services/api_endpoints.dart';
 import '../services/session_manager.dart';
 import 'safe_print.dart';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 
 /// Simple cart counter utility without state management
 class CartCounter {
@@ -12,6 +13,10 @@ class CartCounter {
   static int get cartCount => _cartCount;
   static double get cartTotal => _cartTotal;
 
+  /// Notifiers for reactive UI updates (e.g. menu/cart badge)
+  static final ValueNotifier<int> cartCountNotifier = ValueNotifier<int>(0);
+  static final ValueNotifier<double> cartTotalNotifier = ValueNotifier<double>(0.0);
+
   /// Load cart count from API
   static Future<void> loadCartCount() async {
     try {
@@ -19,6 +24,8 @@ class CartCounter {
       if (token == null) {
         _cartCount = 0;
         _cartTotal = 0.0;
+        cartCountNotifier.value = 0;
+        cartTotalNotifier.value = 0.0;
         return;
       }
 
@@ -65,6 +72,8 @@ class CartCounter {
         
         _cartCount = newCount;
         _cartTotal = newTotal;
+        cartCountNotifier.value = _cartCount;
+        cartTotalNotifier.value = _cartTotal;
         safePrint('🛒 Cart count loaded: $_cartCount, Total: $_cartTotal');
       }
     } catch (e) {
@@ -78,18 +87,22 @@ class CartCounter {
     if (total != null) {
       _cartTotal = total;
     }
+    cartCountNotifier.value = _cartCount;
+    cartTotalNotifier.value = _cartTotal;
     safePrint('🛒 Cart count updated manually: $_cartCount, Total: $_cartTotal');
   }
 
   /// Increment cart count
   static void increment({int by = 1}) {
     _cartCount += by;
+    cartCountNotifier.value = _cartCount;
     safePrint('🛒 Cart count incremented to: $_cartCount');
   }
 
   /// Decrement cart count
   static void decrement({int by = 1}) {
     _cartCount = (_cartCount - by).clamp(0, double.infinity).toInt();
+    cartCountNotifier.value = _cartCount;
     safePrint('🛒 Cart count decremented to: $_cartCount');
   }
 
@@ -97,6 +110,8 @@ class CartCounter {
   static void reset() {
     _cartCount = 0;
     _cartTotal = 0.0;
+    cartCountNotifier.value = 0;
+    cartTotalNotifier.value = 0.0;
     safePrint('🛒 Cart count reset');
   }
 }

@@ -159,8 +159,11 @@ class _HomepageScreenState extends State<HomepageScreen> {
             // Main Content
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-                  : _isSearching && _searchQuery.isNotEmpty
+                  ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.primary),
+                    )
+                  // 🔍 When user has typed something, always stay on the search page
+                  : (_searchQuery.isNotEmpty)
                       ? _buildSearchResults()
                       : RefreshIndicator(
                           onRefresh: _loadProducts,
@@ -315,6 +318,8 @@ class _HomepageScreenState extends State<HomepageScreen> {
       final response = await ApiService.gets(
         '${ApiEndpoints.products}?search=$query',
       );
+
+      print('responseresponseresponse ${response.body}');
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -606,6 +611,7 @@ class _HomepageScreenState extends State<HomepageScreen> {
               ),
             ],
           ),
+
           Positioned(
             bottom: 0,
             left: 0,
@@ -982,7 +988,9 @@ class _HomepageScreenState extends State<HomepageScreen> {
 
   Widget _buildSearchResults() {
     if (_isSearching) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.primary));
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      );
     }
 
     if (_searchProducts.isEmpty) {
@@ -993,6 +1001,8 @@ class _HomepageScreenState extends State<HomepageScreen> {
         ),
       );
     }
+
+    safePrint('🔍 Showing ${_searchProducts.length} search results for "$_searchQuery"');
 
     return ListView.builder(
       padding: EdgeInsets.symmetric(
