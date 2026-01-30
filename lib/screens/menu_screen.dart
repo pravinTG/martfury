@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/cart_counter.dart';
+import '../utils/logout_helper.dart';
 import '../widgets/spacing.dart';
 import 'update_profile_screen.dart';
 import 'order_history_screen.dart';
@@ -67,6 +68,7 @@ class MenuScreen extends StatelessWidget {
                       _buildListCard([
                         _MenuTileData(icon: Icons.attach_money, title: 'Currency', onTap: () {}),
                         _MenuTileData(icon: Icons.language, title: 'Language', onTap: () {}),
+                        _MenuTileData(icon: Icons.logout, title: 'Logout', onTap: () => LogoutHelper.logout(context)),
                       ]),
                       Spacing.sizedBoxH24,
                     ],
