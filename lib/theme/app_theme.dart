@@ -9,11 +9,14 @@ class AppTheme {
     final base = ThemeData.light();
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.scaffoldBackground,
-      primaryColor: AppColors.primary,
+      primaryColor: AppColors.yellow,
       colorScheme: base.colorScheme.copyWith(
-        primary: AppColors.primary,
+        primary: AppColors.yellow,
         secondary: AppColors.accent,
         background: AppColors.background,
+        surface: Colors.white,
+        onPrimary: Colors.white,
+        onSecondary: Colors.white,
       ),
       textTheme: TextTheme(
         headlineLarge: AppTextStyles.heading1,
@@ -25,10 +28,76 @@ class AppTheme {
         labelLarge: AppTextStyles.button,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.white,
+        backgroundColor: AppColors.yellow,
         elevation: 0,
-        foregroundColor: AppColors.textPrimary,
+        foregroundColor: Colors.white,
         centerTitle: true,
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.yellow,
+          foregroundColor: Colors.white,
+          disabledBackgroundColor: AppColors.purpleLight,
+          disabledForegroundColor: AppColors.textDisabled,
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.yellow,
+          side: const BorderSide(color: AppColors.yellow),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: AppColors.yellow,
+        ),
+      ),
+      floatingActionButtonTheme: const FloatingActionButtonThemeData(
+        backgroundColor: AppColors.yellow,
+        foregroundColor: Colors.white,
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        selectedItemColor: AppColors.yellow,
+        unselectedItemColor: AppColors.textSecondary,
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.yellow, width: 1.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+      ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: AppColors.yellow,
+      ),
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return AppColors.yellow;
+          return Colors.transparent;
+        }),
+      ),
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return AppColors.yellow;
+          return AppColors.textSecondary;
+        }),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return AppColors.yellow;
+          return AppColors.textDisabled;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) return AppColors.accent;
+          return AppColors.divider;
+        }),
       ),
       dividerColor: AppColors.divider,
       cardColor: AppColors.card,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'theme/app_theme.dart';
 import 'screens/splash_screen.dart';
 import 'screens/info_screen.dart';
@@ -7,10 +8,19 @@ import 'screens/sign_in_screen.dart';
 import 'screens/sign_up_screen.dart';
 import 'screens/forgot_password_screen.dart';
 import 'screens/new_password_screen.dart';
-import 'screens/category_screen.dart';
+import 'screens/main_navigation_screen.dart';
+import 'package:device_preview/device_preview.dart';
 
-void main() {
-  runApp(const MartfuryApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  runApp(
+    DevicePreview(
+      enabled: false, // Enable device preview only in debug mode
+      builder: (context) => const MartfuryApp(),
+    ),
+  );
 }
 
 class MartfuryApp extends StatelessWidget {
@@ -39,8 +49,8 @@ class MartfuryApp extends StatelessWidget {
             return _slideRoute(const ForgotPasswordScreen(), settings);
           case NewPasswordScreen.routeName:
             return _slideRoute(const NewPasswordScreen(), settings);
-          case CategoryScreen.routeName:
-            return _fadeRoute(const CategoryScreen(), settings);
+          case MainNavigationScreen.routeName:
+            return _fadeRoute(const MainNavigationScreen(), settings);
           default:
             return _fadeRoute(const SplashScreen(), settings);
         }

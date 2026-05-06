@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../utils/responsive.dart';
 import '../widgets/app_button.dart';
 import '../widgets/spacing.dart';
 import 'sign_in_screen.dart';
+import 'main_navigation_screen.dart';
 
 class InfoScreen extends StatefulWidget {
   static const String routeName = '/info';
@@ -19,6 +21,18 @@ class _InfoScreenState extends State<InfoScreen> {
   final PageController _pageController =
       PageController(viewportFraction: 0.78);
   int _currentIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // If user is already logged in, skip the intro flow.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(MainNavigationScreen.routeName);
+    });
+  }
 
   final List<_IntroCardData> _cards = const [
     _IntroCardData(
@@ -73,7 +87,7 @@ class _InfoScreenState extends State<InfoScreen> {
                           text: 'Deals & Discounts',
                           style: AppTextStyles.heading2.copyWith(
                             fontSize: 24,
-                            color: AppColors.primary,
+                            color: AppColors.yellow,
                           ),
                         ),
                       ],
@@ -109,29 +123,6 @@ class _InfoScreenState extends State<InfoScreen> {
                     },
                   ),
                   Spacing.sizedBoxH16,
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        'Already have an account? ',
-                        style: AppTextStyles.body2,
-                      ),
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.of(context)
-                              .pushReplacementNamed(SignInScreen.routeName);
-                        },
-                        child: Text(
-                          'Sign In',
-                          style: AppTextStyles.body2.copyWith(
-                            color: AppColors.primary,
-                            decoration: TextDecoration.underline,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
                   Spacing.sizedBoxH24,
                 ],
               ),
@@ -222,7 +213,7 @@ class _IntroIndicators extends StatelessWidget {
           width: 8,
           height: 8,
           decoration: BoxDecoration(
-            color: isActive ? AppColors.primary : const Color(0xFFE0E0E0),
+            color: isActive ? AppColors.yellow : const Color(0xFFE0E0E0),
             shape: BoxShape.circle,
           ),
         );

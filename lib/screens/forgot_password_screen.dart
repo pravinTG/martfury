@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/spacing.dart';
 import '../utils/responsive.dart';
 import 'sign_in_screen.dart';
@@ -86,7 +87,7 @@ class ForgotPasswordScreen extends StatelessWidget {
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(16),
                             borderSide:
-                                const BorderSide(color: AppColors.primary),
+                                const BorderSide(color: AppColors.yellow),
                           ),
                         ),
                       ),
@@ -94,6 +95,11 @@ class ForgotPasswordScreen extends StatelessWidget {
                       AppButton(
                         label: 'Send Code',
                         onPressed: () {
+                          AppSnackBar.show(
+                            context,
+                            'Reset code sent successfully.',
+                            type: AppSnackType.success,
+                          );
                           Navigator.of(context)
                               .pushNamed(NewPasswordScreen.routeName);
                         },
@@ -116,7 +122,7 @@ class ForgotPasswordScreen extends StatelessWidget {
                               child: Text(
                                 'Sign In',
                                 style: AppTextStyles.body2.copyWith(
-                                  color: AppColors.primary,
+                                  color: AppColors.yellow,
                                   fontWeight: FontWeight.w600,
                                   decoration: TextDecoration.underline,
                                 ),

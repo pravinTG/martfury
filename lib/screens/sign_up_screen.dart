@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/spacing.dart';
 import '../utils/responsive.dart';
 import 'sign_in_screen.dart';
@@ -94,7 +95,11 @@ class SignUpScreen extends StatelessWidget {
                       AppButton(
                         label: 'Sign Up',
                         onPressed: () {
-                          // TODO: perform sign up then go to home
+                          AppSnackBar.show(
+                            context,
+                            'Sign up flow is not connected yet.',
+                            type: AppSnackType.info,
+                          );
                         },
                       ),
                       Spacing.sizedBoxH24,
@@ -147,7 +152,7 @@ class SignUpScreen extends StatelessWidget {
                             child: Text(
                               'Sign In',
                               style: AppTextStyles.body2.copyWith(
-                                color: AppColors.primary,
+                                color: AppColors.yellow,
                                 fontWeight: FontWeight.w600,
                                 decoration: TextDecoration.underline,
                               ),
@@ -195,7 +200,7 @@ class _TextField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary),
+          borderSide: const BorderSide(color: AppColors.yellow),
         ),
       ),
     );
@@ -224,7 +229,7 @@ class _PasswordField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary),
+          borderSide: const BorderSide(color: AppColors.yellow),
         ),
         suffixIcon: const Icon(
           Icons.visibility_off_outlined,

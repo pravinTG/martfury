@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
+import '../token_storage_service.dart';
 import 'info_screen.dart';
+import 'main_navigation_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   static const String routeName = '/splash';
@@ -20,9 +23,17 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(seconds: 2), () {
+    _timer = Timer(const Duration(seconds: 3), () async {
       if (!mounted) return;
-      Navigator.of(context).pushReplacementNamed(InfoScreen.routeName);
+      final user = FirebaseAuth.instance.currentUser;
+      final isLoggedIn = await TokenStorageService.isLoggedIn();
+      final savedUserId = await TokenStorageService.getUserId();
+
+      if (user != null || (isLoggedIn && savedUserId != null && savedUserId.isNotEmpty)) {
+        Navigator.of(context).pushReplacementNamed(MainNavigationScreen.routeName);
+      } else {
+        Navigator.of(context).pushReplacementNamed(InfoScreen.routeName);
+      }
     });
   }
 
@@ -35,7 +46,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: AppColors.accent,
       body: const _SplashLogo(),
     );
   }
@@ -46,29 +57,42 @@ class _SplashLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: const Alignment(0, 0.4), // a bit lower than exact center
-      child: RichText(
-        text: TextSpan(
-          children: [
-            TextSpan(
-              text: 'mart',
-              style: GoogleFonts.poppins(
-                fontSize: 40,
-                fontWeight: FontWeight.w700,
-                color: Colors.black,
-              ),
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset(
+            'assets/appicon.png',
+            width: 96,
+            height: 96,
+          ),
+          const SizedBox(height: 16),
+          RichText(
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: 'Goodies',
+                  style: GoogleFonts.poppins(
+                    fontSize: 40,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    fontStyle:FontStyle.italic
+                  ),
+                ),
+                TextSpan(
+                  text: 'World',
+                  style: GoogleFonts.poppins(
+                    fontSize: 40,
+                    fontWeight: FontWeight.w600,
+                    fontStyle:FontStyle.italic,
+
+                    color: Colors.white,
+                  ),
+                ),
+              ],
             ),
-            TextSpan(
-              text: 'fury',
-              style: GoogleFonts.poppins(
-                fontSize: 40,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

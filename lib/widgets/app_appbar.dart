@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
-class AppAppBar extends StatelessWidget implements PreferredSizeWidget {
+class CustomAppBar extends StatelessWidget implements PreferredSizeWidget {
   final String title;
   final bool showBack;
   final List<Widget>? actions;
 
-  const AppAppBar({
+  const CustomAppBar({
     super.key,
     required this.title,
     this.showBack = false,
@@ -28,10 +29,12 @@ class AppAppBar extends StatelessWidget implements PreferredSizeWidget {
           : null,
       title: Text(
         title,
-        style: AppTextStyles.heading3,
+        style: AppTextStyles.heading3.copyWith(color: AppColors.onPrimary),
       ),
       actions: actions,
       elevation: 0,
+      backgroundColor: AppColors.primary,
+      iconTheme: const IconThemeData(color: AppColors.onPrimary),
     );
   }
 }

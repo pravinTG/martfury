@@ -8,6 +8,7 @@ class AppButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool isPrimary;
   final bool isExpanded;
+  final bool isLoading;
 
   const AppButton({
     super.key,
@@ -15,14 +16,15 @@ class AppButton extends StatelessWidget {
     this.onPressed,
     this.isPrimary = true,
     this.isExpanded = true,
+    this.isLoading = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final button = ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: isPrimary ? AppColors.primary : Colors.white,
-        foregroundColor: isPrimary ? Colors.black : AppColors.textPrimary,
+        backgroundColor: isPrimary ? AppColors.yellow : Colors.white,
+        foregroundColor: isPrimary ? AppColors.onPrimary : AppColors.textPrimary,
         padding: EdgeInsets.symmetric(
           vertical: Responsive.height(context, 0.018),
           horizontal: Responsive.width(context, 0.04),
@@ -36,8 +38,14 @@ class AppButton extends StatelessWidget {
         elevation: isPrimary ? 1 : 0,
         textStyle: AppTextStyles.button,
       ),
-      onPressed: onPressed,
-      child: Text(label),
+      onPressed: isLoading ? null : onPressed,
+      child: isLoading
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onPrimary),
+            )
+          : Text(label),
     );
 
     if (isExpanded) {

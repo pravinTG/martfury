@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_button.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/spacing.dart';
 import '../utils/responsive.dart';
 import 'sign_in_screen.dart';
@@ -81,6 +82,11 @@ class NewPasswordScreen extends StatelessWidget {
                       AppButton(
                         label: 'Reset Password',
                         onPressed: () {
+                          AppSnackBar.show(
+                            context,
+                            'Password reset successful.',
+                            type: AppSnackType.success,
+                          );
                           Navigator.of(context).pushReplacementNamed(
                             SignInScreen.routeName,
                           );
@@ -120,7 +126,7 @@ class _PasswordField extends StatelessWidget {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: AppColors.primary),
+          borderSide: const BorderSide(color: AppColors.yellow),
         ),
         suffixIcon: const Icon(
           Icons.visibility_off_outlined,
