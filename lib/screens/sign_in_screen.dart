@@ -197,8 +197,7 @@ class _SignInScreenState extends State<SignInScreen> {
                     children: [
                       Image.asset(
                         'assets/appicon.png',
-                        width: 96,
-                        height: 96,
+
                       ),
                       Spacing.sizedBoxH32,
                       Text(
