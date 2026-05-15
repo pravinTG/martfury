@@ -1,4 +1,4 @@
-package com.techgigs.goodiesworld
+package com.tg.goodiesworld
 
 import io.flutter.embedding.android.FlutterActivity
 

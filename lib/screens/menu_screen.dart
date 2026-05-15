@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:martfury/screens/about_us.dart';
+import 'package:martfury/screens/address_selection_screen.dart';
 import 'package:martfury/screens/faq.dart';
 import 'package:martfury/screens/orders_screen.dart';
 import 'package:martfury/screens/our_policy.dart';
+import 'package:martfury/screens/wallet_screen.dart';
 import 'package:martfury/term_condition.dart';
 import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/theme/app_text_styles.dart';
@@ -237,7 +239,12 @@ class _MenuScreenState extends State<MenuScreen> {
               title: 'Manage Address',
               color: AppColors.yellow,
               onTap: () {
-
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AddressSelectionScreen(cartData: {}),
+                  ),
+                );
               },
             ),
             _buildMenuItem(
@@ -245,7 +252,10 @@ class _MenuScreenState extends State<MenuScreen> {
               title: 'My Wallet',
               color: AppColors.yellow,
               onTap: () {
-
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WalletScreen()),
+                );
               },
 
             ),

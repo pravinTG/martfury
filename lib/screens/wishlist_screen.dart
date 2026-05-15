@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:martfury/screens/search_screen.dart';
 import '../api_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
 class WishlistScreen extends StatefulWidget {
-  const WishlistScreen({Key? key}) : super(key: key);
+  const WishlistScreen({Key? key, this.onCartChanged}) : super(key: key);
+
+  final VoidCallback? onCartChanged;
 
   @override
-  State<WishlistScreen> createState() => _WishlistScreenState();
+  State<WishlistScreen> createState() => WishlistScreenState();
 }
 
-class _WishlistScreenState extends State<WishlistScreen> {
+class WishlistScreenState extends State<WishlistScreen> {
   final ApiService _apiService = ApiService();
 
   String selectedSort = 'Default';
@@ -23,6 +26,10 @@ class _WishlistScreenState extends State<WishlistScreen> {
   void initState() {
     super.initState();
     _loadWishlist();
+  }
+
+  Future<void> refresh() async {
+    await _loadWishlist();
   }
 
   Future<void> _loadWishlist() async {
@@ -85,6 +92,7 @@ class _WishlistScreenState extends State<WishlistScreen> {
         quantity: 1,
         variationId: item['variation_id']?.toString(),
       );
+      widget.onCartChanged?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -162,7 +170,12 @@ class _WishlistScreenState extends State<WishlistScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white),
-            onPressed: () {},
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
           ),
         ],
       ),

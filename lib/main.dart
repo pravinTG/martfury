@@ -18,19 +18,19 @@ Future<void> main() async {
   runApp(
     DevicePreview(
       enabled: false, // Enable device preview only in debug mode
-      builder: (context) => const MartfuryApp(),
+      builder: (context) => const GoodiesWorldApp(),
     ),
   );
 }
 
-class MartfuryApp extends StatelessWidget {
-  const MartfuryApp({super.key});
+class GoodiesWorldApp extends StatelessWidget {
+  const GoodiesWorldApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Martfury',
+      title: 'Goodies World',
       theme: AppTheme.lightTheme,
       initialRoute: SplashScreen.routeName,
       onGenerateRoute: (settings) {

@@ -4,7 +4,7 @@ class AppColors {
   AppColors._();
 
   // Core brand colors
-  static const Color yellow = Color(0xFF4B1F78); // Primary Cadbury-style purple
+  static const Color yellow = Color(0xFFFFB74D);// Primary Cadbury-style purple
   static const Color primary = yellow;
   static const Color accent = Color(0xFF6D33A6); // Secondary purple accent
   static const Color purpleLight = Color(0xFFEDE3F8);

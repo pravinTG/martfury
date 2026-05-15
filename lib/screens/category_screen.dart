@@ -5,6 +5,7 @@ import 'package:martfury/screens/product_list.dart';
 import 'package:martfury/screens/search_screen.dart';
 import '../api_service.dart';
 import '../theme/app_colors.dart';
+import '../theme/app_text_styles.dart';
 import '../widgets/app_snackbar.dart';
 
 class CategoryScreen extends StatefulWidget {
@@ -126,6 +127,96 @@ class _CategoryScreenState extends State<CategoryScreen> {
         .replaceAll('&apos;', "'");
   }
 
+  Widget _buildSubOrProductGrid() {
+    final selectedId = selectedCategoryId;
+    final hasSubcategories = selectedId != null &&
+        subcategoriesMap[selectedId] != null &&
+        (subcategoriesMap[selectedId]?.isNotEmpty ?? false);
+
+    if (hasSubcategories) {
+      final subList = subcategoriesMap[selectedId!]!;
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        child: GridView.builder(
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            childAspectRatio: 0.85,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: subList.length,
+          itemBuilder: (context, index) {
+            final subcategory = subList[index];
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ProductListScreen(
+                      categoryId: subcategory['id'],
+                      categoryName: subcategory['name'],
+                    ),
+                  ),
+                );
+              },
+              child: SubcategoryCard(
+                name: subcategory['name'],
+                imageUrl: subcategory['image']?['src'],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    if (categoryProducts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.inventory_2_outlined,
+                size: 52,
+                color: Colors.grey.shade400,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'No products available',
+                style: AppTextStyles.body1.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: GridView.builder(
+        padding: EdgeInsets.zero,
+        physics: const BouncingScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          childAspectRatio: 0.52,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: categoryProducts.length,
+        itemBuilder: (context, index) {
+          final product = categoryProducts[index];
+          return ProductCard(product: product);
+        },
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -137,32 +228,53 @@ class _CategoryScreenState extends State<CategoryScreen> {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(110),
+        preferredSize: const Size.fromHeight(132),
         child: AppBar(
           automaticallyImplyLeading: false,
           backgroundColor: AppColors.yellow,
           elevation: 0,
           flexibleSpace: SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Shop by Category',
+                    style: AppTextStyles.heading2.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   // Search Bar
                   Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                     ),
                     child: TextField(
                       controller: _searchController,
+                      readOnly: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SearchScreen(),
+                          ),
+                        );
+                      },
                       decoration: InputDecoration(
                         hintText: "I'm shopping for...",
                         hintStyle: TextStyle(
                           color: AppColors.hintText,
                           fontSize: 16,
                         ),
-                        prefixIcon: null,
+                        prefixIcon: const Icon(
+                          Icons.search,
+                          color: AppColors.textSecondary,
+                        ),
                         suffixIcon: Container(
                           margin: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
@@ -179,7 +291,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
                               );
                             },
                             icon: const Icon(
-                              Icons.search,
+                              Icons.arrow_forward,
                               color: Colors.white,
                             ),
                           ),
@@ -214,12 +326,13 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   child: Container(
                     color: Colors.white,
                     child: ListView.builder(
-                      padding: EdgeInsets.zero,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
                       itemCount: mainCategories.length,
                       itemBuilder: (context, index) {
                         final category = mainCategories[index];
                         final isSelected = category['name'] == selectedCategory;
                         final categoryName = category['name'];
+                        final subCount = subcategoriesMap[category['id']]?.length ?? 0;
 
                         return GestureDetector(
                           onTap: () {
@@ -230,9 +343,12 @@ class _CategoryScreenState extends State<CategoryScreen> {
                             // Fetch products for selected category
                             _fetchCategoryProducts(category['id']);
                           },
-                          child: Container(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: isSelected ? AppColors.purpleLight : Colors.white,
+                              borderRadius: BorderRadius.circular(10),
                               border: Border(
                                 left: BorderSide(
                                   color: isSelected
@@ -242,21 +358,33 @@ class _CategoryScreenState extends State<CategoryScreen> {
                                 ),
                               ),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 14,
-                            ),
-                            child: Text(
-                              categoryName,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: isSelected
-                                    ? AppColors.textPrimary
-                                    : AppColors.textSecondary,
-                                fontWeight: isSelected
-                                    ? FontWeight.w500
-                                    : FontWeight.normal,
-                              ),
+                            padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  categoryName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: isSelected
+                                        ? AppColors.textPrimary
+                                        : AppColors.textSecondary,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '$subCount subcategories',
+                                  style: AppTextStyles.caption.copyWith(
+                                    fontSize: 10,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -267,134 +395,87 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
                 // Right Side - Subcategories
                 Expanded(
-                  flex: 5,
+                  flex: 6,
                   child: Container(
-                    color: AppColors.purpleLight,
+                    margin: const EdgeInsets.only(left: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.purpleLight,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(18),
+                        bottomLeft: Radius.circular(18),
+                      ),
+                    ),
                     child: isLoadingProducts
                         ? const Center(child: CircularProgressIndicator())
-                        : SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Header with arrow
-                          Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: GestureDetector(
-                              onTap: () {
-                                if (selectedCategoryId != null) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => ProductListScreen(
-                                        categoryId: selectedCategoryId!,
-                                        categoryName: selectedCategory ?? '',
-                                      ),
-                                    ),
-                                  );
-                                }
-                              },
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      selectedCategory ?? '',
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                  ),
-                                  const Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 14,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-
-                          // Check if subcategories exist
-                          if (selectedCategoryId != null &&
-                              subcategoriesMap[selectedCategoryId] != null &&
-                              subcategoriesMap[selectedCategoryId]!.isNotEmpty)
-                          // Show Subcategories Grid
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                              child: GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  childAspectRatio: 0.85,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                ),
-                                itemCount: subcategoriesMap[selectedCategoryId]!.length,
-                                itemBuilder: (context, index) {
-                                  final subcategory =
-                                  subcategoriesMap[selectedCategoryId]![index];
-                                  return GestureDetector(
-                                    onTap: () {
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Header with arrow
+                              Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: GestureDetector(
+                                  onTap: () {
+                                    if (selectedCategoryId != null) {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) => ProductListScreen(
-                                            categoryId: subcategory['id'],
-                                            categoryName: subcategory['name'],
+                                          builder: (context) =>
+                                              ProductListScreen(
+                                            categoryId: selectedCategoryId!,
+                                            categoryName:
+                                                selectedCategory ?? '',
                                           ),
                                         ),
                                       );
-                                    },
-                                    child: SubcategoryCard(
-                                      name: subcategory['name'],
-                                      imageUrl: subcategory['image']?['src'],
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
                                     ),
-                                  );
-                                },
-                              ),
-                            )
-                          else
-                          // Show Products Grid if no subcategories
-                            categoryProducts.isEmpty
-                                ? const Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Center(
-                                child: Text(
-                                  'No products available',
-                                  style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 14,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.04),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            selectedCategory ?? '',
+                                            style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                              color: AppColors.textPrimary,
+                                            ),
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.arrow_forward_ios,
+                                          size: 14,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            )
-                                : Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                              child: GridView.builder(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2,
-                                  childAspectRatio: 0.52,
-                                  crossAxisSpacing: 12,
-                                  mainAxisSpacing: 12,
-                                ),
-                                itemCount: categoryProducts.length,
-                                itemBuilder: (context, index) {
-                                  final product = categoryProducts[index];
-                                  return ProductCard(product: product);
-                                },
+
+                              Expanded(
+                                child: _buildSubOrProductGrid(),
                               ),
-                            ),
-                          const SizedBox(height: 16),
-                        ],
-                      ),
-                    ),
+                              const SizedBox(height: 16),
+                            ],
+                          ),
                   ),
                 ),
               ],
@@ -421,12 +502,12 @@ class SubcategoryCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -439,13 +520,13 @@ class SubcategoryCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(8),
               child: Image.network(
                 imageUrl!,
-                height: 60,
-                width: 60,
+                height: 72,
+                width: 72,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) {
                   return Container(
-                    height: 60,
-                    width: 60,
+                    height: 72,
+                    width: 72,
                     decoration: BoxDecoration(
                       color: Colors.grey[200],
                       borderRadius: BorderRadius.circular(8),
@@ -461,8 +542,8 @@ class SubcategoryCard extends StatelessWidget {
             )
           else
             Container(
-              height: 60,
-              width: 60,
+              height: 72,
+              width: 72,
               decoration: BoxDecoration(
                 color: Colors.grey[200],
                 borderRadius: BorderRadius.circular(8),
@@ -473,14 +554,14 @@ class SubcategoryCard extends StatelessWidget {
                 color: Colors.grey[400],
               ),
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8.0),
             child: Text(
               name,
               style: const TextStyle(
                 fontSize: 12,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
               ),
               textAlign: TextAlign.center,

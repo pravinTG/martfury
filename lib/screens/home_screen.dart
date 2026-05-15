@@ -6,12 +6,16 @@ import '../api_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import 'menu_screen.dart';
 import 'product_list.dart';
 import 'product_detail_screen.dart'; // ADD THIS LINE
+import 'search_screen.dart';
+import 'wallet_screen.dart';
 import '../widgets/async_state_view.dart';
 import '../widgets/app_loader.dart';
 import '../widgets/app_snackbar.dart';
+import '../token_storage_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -31,12 +35,53 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentProductsPage = 1;
   static const int _productsPerPage = 20;
   String? _errorMessage;
+  double? _walletBalance;
+  bool _isWalletLoading = false;
+
+  void _openSearch() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const SearchScreen()),
+    );
+  }
+
+  Future<void> _openBecomeVendor() async {
+    try {
+      final uri = Uri.parse('https://goodiesworld.techgigs.in/become-a-vendor/');
+      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!opened && mounted) {
+        AppSnackBar.show(
+          context,
+          'Unable to open vendor page',
+          type: AppSnackType.error,
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Unavailable',
+        type: AppSnackType.error,
+      );
+    }
+  }
+
+  void _goToHomeTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _fetchData();
+    _loadWalletBalance();
   }
 
   @override
@@ -63,12 +108,43 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isLoading = false;
       });
+      await _loadWalletBalance();
     } catch (e) {
       setState(() {
         _errorMessage = 'Failed to load data: $e';
         _isLoading = false;
       });
       print('Error fetching data: $e');
+    }
+  }
+
+  Future<void> _loadWalletBalance() async {
+    if (_isWalletLoading) return;
+    setState(() => _isWalletLoading = true);
+    try {
+      final idStr = await TokenStorageService.getUserId();
+      final uid = int.tryParse(idStr ?? '');
+      if (uid == null) {
+        if (mounted) {
+          setState(() {
+            _walletBalance = null;
+            _isWalletLoading = false;
+          });
+        }
+        return;
+      }
+
+      final balance = await _apiService.getWalletBalance(uid);
+      if (!mounted) return;
+      setState(() {
+        _walletBalance = balance;
+        _isWalletLoading = false;
+      });
+    } catch (e) {
+      // Silent on UI; keep console for debugging.
+      debugPrint('WALLET_BALANCE: failed $e');
+      if (!mounted) return;
+      setState(() => _isWalletLoading = false);
     }
   }
 
@@ -196,12 +272,40 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         title: const Text(
-          'Goodiesworld',
+          'Goodies World',
           style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w700,
           ),
         ),
+        actions: [
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WalletScreen()),
+              );
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/chirag.png',height: 40,width: 40
+                ),
+                const Text(
+                  'Check Bonus',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
       ),
       body: _isLoading
           ? _buildFancyLoader()
@@ -215,6 +319,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildQuickActionRow(),
                       _buildHomeSearchBar(),
                       _buildTopCategories(),
                       _buildTopBanners(),
@@ -239,8 +344,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHomeSearchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: TextField(
+        readOnly: true,
+        onTap: _openSearch,
         decoration: InputDecoration(
           hintText: 'Search for Sarees, Kurtis, Cosmetics, etc.',
           hintStyle: AppTextStyles.hintText,
@@ -250,14 +357,124 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(vertical: 16),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF9A9AA0), width: 1.3),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: AppColors.border),
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF9A9AA0), width: 1.3),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(18),
+            borderSide: const BorderSide(color: Color(0xFF8A8A90), width: 1.4),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: _quickButton(
+              label: 'Shopping',
+              icon: Icons.shopping_bag_outlined,
+              backgroundColor: AppColors.yellow,
+              isSelected: true,
+              foregroundColor: Colors.white,
+              onTap: _goToHomeTop,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _quickButton(
+              label: 'Become a Vendor',
+              icon: Icons.travel_explore_outlined,
+              backgroundColor: const Color(0xFFF1F2F4),
+              isSelected: false,
+              foregroundColor: AppColors.textPrimary,
+              onTap: _openBecomeVendor,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _quickButton(
+              label: 'Wallet',
+              icon: Icons.account_balance_wallet_outlined,
+              backgroundColor: AppColors.yellow,
+              isSelected: true,
+              foregroundColor: Colors.white,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WalletScreen()),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _quickButton({
+    required String label,
+    required IconData icon,
+    required Color backgroundColor,
+    required bool isSelected,
+    required Color foregroundColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        splashColor: Colors.black.withOpacity(0.06),
+        highlightColor: Colors.black.withOpacity(0.04),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isSelected ? const Color(0xFFE0B400) : const Color(0xFFD9DCE1),
+              width: isSelected ? 1.2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 4,
+                offset: const Offset(0, 1.5),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 19, color: foregroundColor),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: label == 'Become a Vendor' ? 10.5 : 11.5,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                  color: foregroundColor,
+                  height: 1.0,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -563,7 +780,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: () {},
+            onPressed: _openSearch,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.yellow,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -574,7 +791,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Text(
               'Shop Now',
               style: TextStyle(
-                color: AppColors.textPrimary,
+                color: Colors.white,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),

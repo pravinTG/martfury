@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:martfury/screens/address_selection_screen.dart';
 import '../api_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
 class CartScreen extends StatefulWidget {
-  const CartScreen({super.key});
+  const CartScreen({super.key, this.onCartChanged});
+
+  final VoidCallback? onCartChanged;
 
   @override
-  State<CartScreen> createState() => _CartScreenState();
+  State<CartScreen> createState() => CartScreenState();
 }
 
-class _CartScreenState extends State<CartScreen> {
+class CartScreenState extends State<CartScreen> {
   final ApiService _apiService = ApiService();
   Map<String, dynamic>? _cartData;
   bool _isLoading = true;
@@ -20,6 +23,10 @@ class _CartScreenState extends State<CartScreen> {
   void initState() {
     super.initState();
     _loadCart();
+  }
+
+  Future<void> refresh() async {
+    await _loadCart();
   }
 
   Future<void> _loadCart() async {
@@ -46,6 +53,7 @@ class _CartScreenState extends State<CartScreen> {
       setState(() => _isLoading = true);
       await _apiService.removeFromCart(productId: productId);
       await _loadCart();
+      widget.onCartChanged?.call();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -99,6 +107,13 @@ class _CartScreenState extends State<CartScreen> {
       return int.tryParse(totals['total_items'].toString()) ?? 0;
     }
     return _getCartItems().length;
+  }
+
+  bool _hasOutOfStockItems(List<dynamic> items) {
+    return items.any((item) {
+      final row = Map<String, dynamic>.from(item as Map);
+      return (row['stock_status'] ?? '').toString().toLowerCase() == 'outofstock';
+    });
   }
 
   @override
@@ -507,6 +522,7 @@ class _CartScreenState extends State<CartScreen> {
 
     final total = _getCartTotal();
     final totalItems = _getTotalItems();
+    final hasOutOfStockItems = _hasOutOfStockItems(items);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
@@ -569,7 +585,22 @@ class _CartScreenState extends State<CartScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                // TODO: Navigate to checkout screen
+                if (_cartData == null) return;
+                if (hasOutOfStockItems) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Product is out of stock'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AddressSelectionScreen(cartData: _cartData!),
+                  ),
+                );
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.yellow,

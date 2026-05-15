@@ -1,16 +1,35 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'token_storage_service.dart';
 
 class ApiService {
   static const String baseUrl = 'https://goodiesworld.techgigs.in/wp-json/wc/v3';
+  static const String walletBaseUrl =
+      'https://goodiesworld.techgigs.in/wp-json/techgigs-wallet/v1';
 
   static const String basicAuth =
       'Basic Y2tfYWZlY2FmZmFmNzhkMTE5ZGU2YmNhMzk0ZTk4YTA4N2E0NjM5YTJjMTpjc182OTVkNDA2OTc0YzE4ZTM1YWUzN2M3YjVhY2YxNGZkYTgwNGYwZmM3';
 
   // ─── Auth Headers (Firebase token if available, else Basic) ───────────────
   Future<Map<String, String>> _getAuthHeaders() async {
-    final idToken = await TokenStorageService.getIdToken();
+    String? idToken;
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+
+    if (firebaseUser != null) {
+      try {
+        // Prefer the latest Firebase token to avoid stale-session 401 issues.
+        idToken = await firebaseUser.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          await TokenStorageService.saveIdToken(idToken);
+        }
+      } catch (e) {
+        print('⚠️ Unable to refresh Firebase token: $e');
+      }
+    }
+
+    idToken ??= await TokenStorageService.getIdToken();
+
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -26,6 +45,55 @@ class ApiService {
     'Accept': 'application/json',
     'Authorization': basicAuth,
   };
+
+  double _parseAmount(dynamic value) {
+    if (value == null) return 0;
+    final sanitized = value.toString().replaceAll(RegExp(r'[^0-9.]'), '');
+    return double.tryParse(sanitized) ?? 0;
+  }
+
+  double _extractMetaPrice(dynamic metaData, String keyName) {
+    if (metaData is! List) return 0;
+    for (final entry in metaData) {
+      if (entry is Map && (entry['key'] ?? '').toString() == keyName) {
+        final amount = _parseAmount(entry['value']);
+        if (amount > 0) return amount;
+      }
+    }
+    return 0;
+  }
+
+  Map<String, dynamic> _applySelectedCartPrice(Map<String, dynamic> item) {
+    final mode = (item['price_mode'] ?? '').toString().toLowerCase();
+    final walletPrice = _parseAmount(item['wallet_price']);
+    final selectedPrice = _parseAmount(item['selected_price']);
+    final customPrice = _parseAmount(item['custom_price']);
+    final metaWalletA = _extractMetaPrice(item['meta_data'], '_wallet_price');
+    final metaWalletB = _extractMetaPrice(item['meta_data'], 'wallet_price');
+
+    final chosenWalletPrice = [
+      walletPrice,
+      selectedPrice,
+      customPrice,
+      metaWalletA,
+      metaWalletB,
+    ].firstWhere((v) => v > 0, orElse: () => 0);
+
+    if (mode != 'wallet' || chosenWalletPrice <= 0) {
+      return item;
+    }
+
+    final quantity = int.tryParse((item['quantity'] ?? 1).toString()) ?? 1;
+    final subtotal = chosenWalletPrice * (quantity <= 0 ? 1 : quantity);
+
+    return <String, dynamic>{
+      ...item,
+      'price': chosenWalletPrice.toStringAsFixed(2),
+      'subtotal': subtotal.toStringAsFixed(2),
+      'line_total': subtotal.toStringAsFixed(2),
+      'total': subtotal.toStringAsFixed(2),
+    };
+  }
 
   // =========================================================================
   // AUTH
@@ -206,14 +274,36 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         print('✅ Cart fetched successfully');
-        return data is Map<String, dynamic> ? data : {'data': data};
+        final parsed = data is Map<String, dynamic> ? data : {'data': data};
+        final cartItemsRaw = parsed['cart_items'];
+        if (cartItemsRaw is List) {
+          final normalizedItems = cartItemsRaw
+              .map((e) => _applySelectedCartPrice(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          parsed['cart_items'] = normalizedItems;
+        }
+        return parsed;
       } else {
         print('❌ Error: ${response.statusCode} - ${response.body}');
-        throw Exception('Failed to load cart: ${response.statusCode}');
+        Map<String, dynamic> errorData = {};
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map<String, dynamic>) errorData = decoded;
+        } catch (_) {}
+
+        final backendMessage = (errorData['message'] ?? '').toString();
+        if (response.statusCode == 401 &&
+            backendMessage.contains('User not found for Firebase UID')) {
+          throw Exception(
+            'We could not verify your cart session right now. Please sign in again.',
+          );
+        }
+
+        throw Exception('Unable to load cart right now. Please try again.');
       }
     } catch (e) {
       print('💥 Exception in getCart: $e');
-      throw Exception('Error fetching cart: $e');
+      throw Exception('$e');
     }
   }
 
@@ -222,6 +312,8 @@ class ApiService {
     required int quantity,
     String? variationId,
     Map<String, dynamic>? variation,
+    String? priceMode,
+    double? walletPrice,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/cart/add');
@@ -232,6 +324,18 @@ class ApiService {
         'quantity': quantity,
         if (variationId != null) 'variation_id': variationId,
         if (variation != null) 'variation': variation,
+        if (priceMode != null && priceMode.isNotEmpty) 'price_mode': priceMode,
+        if (walletPrice != null && walletPrice > 0) 'wallet_price': walletPrice,
+        if (priceMode == 'wallet' && walletPrice != null && walletPrice > 0) ...{
+          // Send multiple compatible keys because different backends parse different fields.
+          'price': walletPrice,
+          'custom_price': walletPrice,
+          'selected_price': walletPrice,
+          'meta_data': [
+            {'key': 'price_mode', 'value': 'wallet'},
+            {'key': '_wallet_price', 'value': walletPrice},
+          ],
+        },
       };
 
       print('📤 Request Body: ${json.encode(body)}');
@@ -301,6 +405,7 @@ class ApiService {
   Future<Map<String, dynamic>> updateCartItem({
     required String productId,
     required int quantity,
+    String? variationId,
   }) async {
     try {
       final url = Uri.parse('$baseUrl/cart/update');
@@ -309,6 +414,7 @@ class ApiService {
       final body = {
         'product_id': productId,
         'quantity': quantity,
+        if (variationId != null) 'variation_id': variationId,
       };
 
       print('📤 Request Body: ${json.encode(body)}');
@@ -359,6 +465,147 @@ class ApiService {
     } catch (e) {
       print('💥 Exception in clearCart: $e');
       throw Exception('Error clearing cart: $e');
+    }
+  }
+
+  // =========================================================================
+  // ADDRESS
+  // =========================================================================
+
+  Future<List<Map<String, dynamic>>> getAddressList() async {
+    try {
+      final url = Uri.parse('$baseUrl/address/list');
+      final headers = await _getAuthHeaders();
+      final response = await http.get(url, headers: headers);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final addresses = (data is Map<String, dynamic>)
+            ? (data['addresses'] as List? ?? const [])
+            : const [];
+        return addresses
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+      }
+      throw Exception('Failed to load addresses: ${response.statusCode}');
+    } catch (e) {
+      throw Exception('Error fetching addresses: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> addAddress({
+    required Map<String, dynamic> address,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/address/add');
+      final headers = await _getAuthHeaders();
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: json.encode({'address': address}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        return data is Map<String, dynamic> ? data : {'data': data};
+      }
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to add address');
+    } catch (e) {
+      throw Exception('Error adding address: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> updateAddress({
+    required Map<String, dynamic> address,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/address/update');
+      final headers = await _getAuthHeaders();
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: json.encode({'address': address}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        return data is Map<String, dynamic> ? data : {'data': data};
+      }
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to update address');
+    } catch (e) {
+      throw Exception('Error updating address: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteAddress({required String id}) async {
+    try {
+      final url = Uri.parse('$baseUrl/address/delete');
+      final headers = await _getAuthHeaders();
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: json.encode({'id': id}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        return data is Map<String, dynamic> ? data : {'data': data};
+      }
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to delete address');
+    } catch (e) {
+      throw Exception('Error deleting address: $e');
+    }
+  }
+
+  // =========================================================================
+  // CHECKOUT
+  // =========================================================================
+
+  Future<Map<String, dynamic>> checkout({
+    required Map<String, dynamic> billing,
+    required Map<String, dynamic> shipping,
+    required List<Map<String, dynamic>> lineItems,
+    String? couponCode,
+    String? deliveryDate,
+    String? customerNote,
+    String paymentMethod = 'razorpay',
+    String? paymentId,
+    double deliveryCharge = 0,
+  }) async {
+    try {
+      final url = Uri.parse('$baseUrl/checkout');
+      final headers = await _getAuthHeaders();
+      final body = <String, dynamic>{
+        'billing': billing,
+        'shipping': shipping,
+        'line_items': lineItems,
+        if (couponCode != null && couponCode.isNotEmpty) 'coupon_code': couponCode,
+        if (deliveryDate != null && deliveryDate.isNotEmpty)
+          'delivery_date': deliveryDate,
+        if (customerNote != null && customerNote.isNotEmpty)
+          'customer_note': customerNote,
+        'payment_method': paymentMethod,
+        if (paymentId != null && paymentId.isNotEmpty) 'payment_id': paymentId,
+        'delivery_charge': deliveryCharge,
+      };
+
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = json.decode(response.body);
+        return data is Map<String, dynamic> ? data : {'data': data};
+      }
+      final errorData = json.decode(response.body);
+      throw Exception(errorData['message'] ?? 'Failed to place order');
+    } catch (e) {
+      throw Exception('Error placing order: $e');
     }
   }
 
@@ -440,11 +687,11 @@ class ApiService {
         return data is Map<String, dynamic> ? data : {'favorites': data};
       } else {
         print('❌ Error: ${response.statusCode} - ${response.body}');
-        throw Exception('Failed to load favorites: ${response.statusCode}');
+        throw Exception('Unable to load wishlist right now. Please try again.');
       }
     } catch (e) {
       print('💥 Exception in getFavorites: $e');
-      throw Exception('Error fetching favorites: $e');
+      throw Exception('$e');
     }
   }
 
@@ -459,8 +706,8 @@ class ApiService {
     List<dynamic>? metaData,
   }) async {
     try {
-      final url = Uri.parse('$baseUrl/orders');
-      print('🛍️ Create Order: POST $url');
+      final url = Uri.parse('$baseUrl/checkout');
+      print('🛍️ Create Order API Call: POST $url');
 
       final body = {
         'billing': billing,
@@ -469,32 +716,35 @@ class ApiService {
         'payment_method': paymentMethod,
         'payment_method_title': paymentMethodTitle,
         'set_paid': setPaid,
-        if (transactionId != null) 'transaction_id': transactionId,
+        if (transactionId != null) ...{
+          // Different backends use different keys; send both for compatibility.
+          'transaction_id': transactionId,
+          'payment_id': transactionId,
+        },
         if (metaData != null) 'meta_data': metaData,
       };
 
       print('📤 Request Body: ${json.encode(body)}');
 
       final headers = await _getAuthHeaders();
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: json.encode(body),
-      );
+      print('🔑 Headers: $headers');
+      final response =
+          await http.post(url, headers: headers, body: json.encode(body));
 
-      print('📡 Response Status: ${response.statusCode}');
+      print('📡 Response Status Code: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = json.decode(response.body);
-        print('✅ Order created: ${data['id']}');
-        return data;
+        print('✅ Success: Order created with ID: ${data['id'] ?? data['order_id']}');
+        return data is Map<String, dynamic> ? data : {'data': data};
       } else {
+        print('❌ Error: ${response.statusCode} - ${response.body}');
         final errorData = json.decode(response.body);
         throw Exception(errorData['message'] ?? 'Failed to create order');
       }
     } catch (e) {
-      print('💥 Exception in createOrder: $e');
+      print('💥 Exception caught: $e');
       throw Exception('Error creating order: $e');
     }
   }
@@ -613,5 +863,101 @@ class ApiService {
       print('💥 Exception in getPage: $e');
       rethrow;
     }
+  }
+
+  // =========================================================================
+  // WALLET
+  // =========================================================================
+
+  Future<double> getWalletBalance(int userId) async {
+    final url = Uri.parse('$walletBaseUrl/balance/$userId');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return double.tryParse((data['wallet_balance'] ?? '0').toString()) ?? 0;
+    }
+    throw Exception('Unable to load wallet balance.');
+  }
+
+  Future<double> getUsableBalance(int userId) async {
+    final url = Uri.parse('$walletBaseUrl/usable-balance/$userId');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return double.tryParse((data['usable_balance'] ?? '0').toString()) ?? 0;
+    }
+    throw Exception('Unable to load usable balance.');
+  }
+
+  Future<double> getLockedBalance(int userId) async {
+    final url = Uri.parse('$walletBaseUrl/locked-balance/$userId');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      return double.tryParse((data['locked_balance'] ?? '0').toString()) ?? 0;
+    }
+    throw Exception('Unable to load locked balance.');
+  }
+
+  Future<List<Map<String, dynamic>>> getWalletTransactions(int userId) async {
+    final url = Uri.parse('$walletBaseUrl/transactions/$userId');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final items = (data['transactions'] as List?) ?? const [];
+      return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    throw Exception('Unable to load wallet transactions.');
+  }
+
+  Future<List<Map<String, dynamic>>> getWithdrawRequests(int userId) async {
+    final url = Uri.parse('$walletBaseUrl/withdraw-requests/$userId');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    if (response.statusCode == 200) {
+      final decoded = json.decode(response.body);
+      if (decoded is List) {
+        return decoded.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      if (decoded is Map<String, dynamic>) {
+        final items = (decoded['requests'] ?? decoded['data'] ?? const []) as List;
+        return items.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+      return <Map<String, dynamic>>[];
+    }
+    throw Exception('Unable to load withdraw history.');
+  }
+
+  Future<Map<String, dynamic>> createWithdrawRequest({
+    required int userId,
+    required double amount,
+  }) async {
+    final url = Uri.parse('$walletBaseUrl/withdraw');
+    final headers = await _getAuthHeaders();
+    final response = await http.post(
+      url,
+      headers: headers,
+      body: json.encode({'user_id': userId, 'amount': amount}),
+    );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = json.decode(response.body);
+      final parsed = data is Map<String, dynamic> ? data : {'data': data};
+      final status = parsed['status'];
+      if (status is bool && !status) {
+        throw Exception((parsed['message'] ?? 'Withdraw failed').toString());
+      }
+      return parsed;
+    }
+    try {
+      final data = json.decode(response.body);
+      if (data is Map<String, dynamic>) {
+        throw Exception((data['message'] ?? 'Withdraw failed').toString());
+      }
+    } catch (_) {}
+    throw Exception('Withdraw failed.');
   }
 }

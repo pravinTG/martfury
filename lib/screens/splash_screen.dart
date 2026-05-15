@@ -46,7 +46,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.accent,
+      backgroundColor: AppColors.yellow,
       body: const _SplashLogo(),
     );
   }
@@ -61,10 +61,11 @@ class _SplashLogo extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Image.asset(
-            'assets/appicon.png',
-            width: 96,
-            height: 96,
+          Padding(
+            padding: const EdgeInsets.all(20.0),
+            child: Image.asset(
+              'assets/appicon.png',
+            ),
           ),
           const SizedBox(height: 16),
           RichText(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api_service.dart';
+import 'search_screen.dart';
 import '../theme/app_colors.dart';
 import '../widgets/app_snackbar.dart';
 
@@ -20,13 +21,32 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Map<String, dynamic>? product;
   bool isLoading = true;
   int selectedImageIndex = 0;
-  int quantity = 2;
+  int quantity = 1;
   String selectedColor = 'Brown';
   late PageController _pageController;
   bool isDescriptionExpanded = false;
   bool isAddingToCart = false;
   bool isFavorite = false;
   bool isTogglingFavorite = false;
+  String _priceMode = 'normal'; // normal | wallet
+
+  double? _getWalletPrice() {
+    final meta = product?['meta_data'];
+    if (meta is! List) return null;
+    for (final item in meta) {
+      if (item is Map && item['key']?.toString() == '_wallet_price') {
+        final raw = item['value']?.toString();
+        final val = double.tryParse(raw ?? '');
+        if (val != null && val > 0) return val;
+      }
+    }
+    return null;
+  }
+
+  double _toDouble(dynamic value) {
+    if (value == null) return 0;
+    return double.tryParse(value.toString()) ?? 0;
+  }
   Future<void> _toggleFavorite() async {
     if (product == null || isTogglingFavorite) return;
     setState(() => isTogglingFavorite = true);
@@ -114,8 +134,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             onPressed: isTogglingFavorite ? null : _toggleFavorite,
           ),
           IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: AppColors.textPrimary),
-            onPressed: () {},
+            icon: const Icon(Icons.search, color: AppColors.textPrimary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
           ),
         ],
       ),
@@ -129,7 +154,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           children: [
             _buildImageSection(),
             _buildProductInfo(),
-            _buildColorSelection(),
+            // _buildColorSelection(),
             _buildQuantitySelection(),
             _buildProductMeta(),
             _buildShareButtons(),
@@ -227,6 +252,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final regularPrice = product!['regular_price'] ?? '';
     final salePrice = product!['sale_price'] ?? '';
     final hasSalePrice = salePrice.isNotEmpty && salePrice != '0';
+    final normalPrice = _toDouble(hasSalePrice ? salePrice : price);
+    final walletPrice = _getWalletPrice();
+    final hasWalletPrice = walletPrice != null && walletPrice > 0 && walletPrice < normalPrice;
+    if (!hasWalletPrice && _priceMode == 'wallet') {
+      _priceMode = 'normal';
+    }
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -289,45 +320,98 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           ),
           const SizedBox(height: 16),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '\₹${hasSalePrice ? salePrice : price}',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
+                '₹${normalPrice.toStringAsFixed(2)}',
+                style: const TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.red,
                 ),
               ),
               const SizedBox(width: 8),
-              if (hasSalePrice && regularPrice.isNotEmpty) ...[
+              if (hasSalePrice && regularPrice.isNotEmpty)
                 Text(
-                  '\₹$regularPrice',
-                  style: TextStyle(
-                    fontSize: 16,
+                  '₹$regularPrice',
+                  style: const TextStyle(
+                    fontSize: 14,
                     color: AppColors.textSecondary,
                     decoration: TextDecoration.lineThrough,
                   ),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.red.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    '20% OFF',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.red,
-                    ),
-                  ),
-                ),
-              ],
             ],
           ),
+          if (hasWalletPrice) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFFAF0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBFE8C5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Wallet Offer Price: ₹${walletPrice!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1B7E2B),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'You Save: ₹${(normalPrice - walletPrice).toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF2E7D32),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Choose Payment Option',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    value: 'normal',
+                    groupValue: _priceMode,
+                    onChanged: (v) => setState(() => _priceMode = v ?? 'normal'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Normal Price: ₹${normalPrice.toStringAsFixed(2)}'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'wallet',
+                    groupValue: _priceMode,
+                    onChanged: (v) => setState(() => _priceMode = v ?? 'wallet'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text('Wallet Price: ₹${walletPrice.toStringAsFixed(2)}'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           Row(
             children: [
@@ -1258,9 +1342,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           isAddingToCart = true;
                         });
                         try {
+                          final walletPrice = _getWalletPrice();
                           await _apiService.addToCart(
                             productId: product!['id'].toString(),
-                            quantity: quantity,
+                            quantity: 1,
+                            priceMode: _priceMode,
+                            walletPrice: _priceMode == 'wallet' ? walletPrice : null,
                           );
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -1316,7 +1403,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 child: const Text(
                   'Buy Now',
                   style: TextStyle(
-                    color: AppColors.textPrimary,
+                    color: Colors.white,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),

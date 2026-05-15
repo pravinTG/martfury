@@ -4,11 +4,13 @@ import 'package:martfury/theme/app_colors.dart';
 class TabScreen extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemTapped;
+  final int cartCount;
 
   const TabScreen({
     Key? key,
     required this.selectedIndex,
     required this.onItemTapped,
+    required this.cartCount,
   }) : super(key: key);
 
   @override
@@ -48,6 +50,7 @@ class TabScreen extends StatelessWidget {
                 icon: Icons.shopping_cart_outlined,
                 label: 'Cart',
                 index: 3,
+                badgeCount: cartCount,
               ),
             ],
           ),
@@ -60,6 +63,7 @@ class TabScreen extends StatelessWidget {
     required IconData icon,
     required String label,
     required int index,
+    int badgeCount = 0,
   }) {
     final isSelected = selectedIndex == index;
 
@@ -90,10 +94,39 @@ class TabScreen extends StatelessWidget {
                   ),
                 ),
               // Icon
-              Icon(
-                icon,
-                size: 28,
-                color: isSelected ? AppColors.yellow : Colors.black87,
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    icon,
+                    size: 28,
+                    color: isSelected ? AppColors.yellow : Colors.black87,
+                  ),
+                  if (badgeCount > 0)
+                    Positioned(
+                      right: -6,
+                      top: -6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: Text(
+                          badgeCount > 99 ? '99+' : badgeCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
