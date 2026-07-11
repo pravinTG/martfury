@@ -40,6 +40,7 @@ class WishlistScreenState extends State<WishlistScreen> {
     try {
       final data = await _apiService.getFavorites();
       final List<dynamic> raw = data['favorites'] ?? [];
+      if (!mounted) return;
       setState(() {
         wishlistItems = raw.map((e) => Map<String, dynamic>.from(e)).toList();
         filteredItems = List.from(wishlistItems);
@@ -47,6 +48,7 @@ class WishlistScreenState extends State<WishlistScreen> {
       });
       _applySort(selectedSort);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -151,7 +153,7 @@ class WishlistScreenState extends State<WishlistScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         automaticallyImplyLeading: false,
         title: const Text(
@@ -163,11 +165,11 @@ class WishlistScreenState extends State<WishlistScreen> {
           ),
         ),
         actions: [
-          if (!_isLoading)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _loadWishlist,
-            ),
+          // if (!_isLoading)
+          //   IconButton(
+          //     icon: const Icon(Icons.refresh, color: Colors.white),
+          //     onPressed: _loadWishlist,
+          //   ),
           IconButton(
             icon: const Icon(Icons.search, color: Colors.white),
             onPressed: () {
@@ -222,7 +224,7 @@ class WishlistScreenState extends State<WishlistScreen> {
                   style: TextStyle(color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.yellow,
+                  backgroundColor: AppColors.headerRed,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 12,

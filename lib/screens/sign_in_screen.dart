@@ -53,15 +53,41 @@ class _SignInScreenState extends State<SignInScreen> {
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: rawPhone,
         verificationCompleted: (PhoneAuthCredential credential) async {
-          final userCredential =
-              await FirebaseAuth.instance.signInWithCredential(credential);
-          final idToken = await userCredential.user?.getIdToken(true);
-          if (idToken != null && idToken.isNotEmpty) {
-            await TokenStorageService.saveIdToken(idToken);
-            await _loginToBackend(idToken);
+          // If Firebase auto-retrieves the SMS code, we populate the field
+          // but DO NOT automatically log in, forcing the user to click "Verify OTP".
+          if (credential.smsCode != null) {
+            setState(() {
+              _isSendingOtp = false;
+              _otpController.text = credential.smsCode!;
+            });
+            _showMessage('OTP received. Please click Verify.');
+            return;
           }
-          if (!mounted) return;
-          Navigator.of(context).pushReplacementNamed(MainNavigationScreen.routeName);
+
+          // IF smsCode is null, it means "Instant Verification" happened 
+          // (Firebase securely verified the device WITHOUT sending an SMS). 
+          // We MUST log them in here, otherwise they will wait for an SMS that never comes!
+          setState(() {
+            _isSendingOtp = false;
+            _isVerifyingOtp = true;
+          });
+          _showMessage('Device instantly verified by Firebase.');
+
+          try {
+            final userCredential =
+                await FirebaseAuth.instance.signInWithCredential(credential);
+            final idToken = await userCredential.user?.getIdToken(true);
+            if (idToken != null && idToken.isNotEmpty) {
+              await TokenStorageService.saveIdToken(idToken);
+              await _loginToBackend(idToken);
+            }
+            if (!mounted) return;
+            Navigator.of(context).pushReplacementNamed(MainNavigationScreen.routeName);
+          } catch (e) {
+            if (!mounted) return;
+            setState(() => _isVerifyingOtp = false);
+            _showMessage('Auto-verification failed.');
+          }
         },
         verificationFailed: (FirebaseAuthException e) {
           if (!mounted) return;
@@ -196,10 +222,9 @@ class _SignInScreenState extends State<SignInScreen> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Image.asset(
-                        'assets/appicon.png',
+                        'assets/logo5.png',
 
                       ),
-                      Spacing.sizedBoxH32,
                       Text(
                         'Sign In',
                         style: AppTextStyles.heading1.copyWith(

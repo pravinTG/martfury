@@ -23,7 +23,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer(const Duration(seconds: 3), () async {
+    _timer = Timer(const Duration(milliseconds: 700), () async {
       if (!mounted) return;
       final user = FirebaseAuth.instance.currentUser;
       final isLoggedIn = await TokenStorageService.isLoggedIn();
@@ -46,7 +46,7 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.yellow,
+      backgroundColor: AppColors.headerRed,
       body: const _SplashLogo(),
     );
   }
@@ -64,35 +64,35 @@ class _SplashLogo extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(20.0),
             child: Image.asset(
-              'assets/appicon.png',
+              'assets/logo5.png',
             ),
           ),
-          const SizedBox(height: 16),
-          RichText(
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: 'Goodies',
-                  style: GoogleFonts.poppins(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                    fontStyle:FontStyle.italic
-                  ),
-                ),
-                TextSpan(
-                  text: 'World',
-                  style: GoogleFonts.poppins(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w600,
-                    fontStyle:FontStyle.italic,
-
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // const SizedBox(height: 16),
+          // RichText(
+          //   text: TextSpan(
+          //     children: [
+          //       TextSpan(
+          //         text: 'Goodies',
+          //         style: GoogleFonts.poppins(
+          //           fontSize: 40,
+          //           fontWeight: FontWeight.w600,
+          //           color: Colors.white,
+          //           fontStyle:FontStyle.italic
+          //         ),
+          //       ),
+          //       TextSpan(
+          //         text: 'World',
+          //         style: GoogleFonts.poppins(
+          //           fontSize: 40,
+          //           fontWeight: FontWeight.w600,
+          //           fontStyle:FontStyle.italic,
+          //
+          //           color: Colors.white,
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
         ],
       ),
     );

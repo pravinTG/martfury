@@ -1,32 +1,13 @@
 {
   "project_info": {
-    "project_number": "794948316104",
-    "project_id": "goodies-world",
-    "storage_bucket": "goodies-world.firebasestorage.app"
+    "project_number": "271623256429",
+    "project_id": "goodiesworld-74550",
+    "storage_bucket": "goodiesworld-74550.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:794948316104:android:f38212b68608f64f98eefd",
-        "android_client_info": {
-          "package_name": "com.techgigs.goodiesworld"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyAZbqs4XBefW-NNDEwHiNNhLIhlCBeV8dA"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:794948316104:android:d4e68e0c96ff5be098eefd",
+        "mobilesdk_app_id": "1:271623256429:android:52720c7610b7d111bac264",
         "android_client_info": {
           "package_name": "com.tg.goodiesworld"
         }
@@ -34,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAZbqs4XBefW-NNDEwHiNNhLIhlCBeV8dA"
+          "current_key": "AIzaSyAc1v75nXfbnbkR8gbgdVLLWG-lsBhzdQU"
         }
       ],
       "services": {

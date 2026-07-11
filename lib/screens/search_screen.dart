@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
+import '../api_service.dart';
+import 'product_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({Key? key}) : super(key: key);
@@ -12,6 +14,11 @@ class SearchScreen extends StatefulWidget {
 class _SearchScreenState extends State<SearchScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  final ApiService _apiService = ApiService();
+  bool _isLoading = false;
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _hasSearched = false;
+  final Set<int> _favoriteProductIds = <int>{};
 
   // Recent searches
   final List<String> recentSearches = [
@@ -43,6 +50,59 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  void _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() {
+      _isLoading = true;
+      _hasSearched = true;
+      _isSearching = false;
+    });
+    
+    if (!recentSearches.contains(query)) {
+      recentSearches.insert(0, query);
+      if (recentSearches.length > 5) recentSearches.removeLast();
+    }
+
+    try {
+      final results = await _apiService.searchProducts(query);
+      if (mounted) {
+        setState(() {
+          _searchResults = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to search: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleFavorite(int productId) async {
+    try {
+      final response = await _apiService.toggleFavorite(productId: productId.toString());
+      final message = (response['message'] ?? 'Wishlist updated').toString();
+      final removed = message.toLowerCase().contains('removed');
+      if (!mounted) return;
+      setState(() {
+        if (removed) {
+          _favoriteProductIds.remove(productId);
+        } else {
+          _favoriteProductIds.add(productId);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+    }
+  }
+
   void _clearRecentSearches() {
     setState(() {
       recentSearches.clear();
@@ -57,7 +117,7 @@ class _SearchScreenState extends State<SearchScreen> {
         preferredSize: const Size.fromHeight(70),
         child: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: AppColors.yellow,
+          backgroundColor: AppColors.headerRed,
           elevation: 0,
           flexibleSpace: SafeArea(
             child: Padding(
@@ -88,8 +148,11 @@ class _SearchScreenState extends State<SearchScreen> {
                         onChanged: (value) {
                           setState(() {
                             _isSearching = value.isNotEmpty;
+                            if (value.isEmpty) _hasSearched = false;
                           });
                         },
+                        onSubmitted: (value) => _performSearch(value),
+                        textInputAction: TextInputAction.search,
                         decoration: InputDecoration(
                           hintText: "I'm shopping for...",
                           hintStyle: AppTextStyles.hintText,
@@ -105,6 +168,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                     setState(() {
                                       _searchController.clear();
                                       _isSearching = false;
+                                      _hasSearched = false;
                                     });
                                   },
                                 ),
@@ -121,7 +185,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                     size: 20,
                                   ),
                                   onPressed: () {
-                                    // Perform search
+                                    _performSearch(_searchController.text);
                                   },
                                 ),
                               ),
@@ -142,7 +206,9 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-      body: _isSearching ? _buildSearchSuggestions() : _buildDefaultContent(),
+      body: _isSearching
+          ? _buildSearchSuggestions()
+          : (_hasSearched ? _buildSearchResults() : _buildDefaultContent()),
     );
   }
 
@@ -188,54 +254,54 @@ class _SearchScreenState extends State<SearchScreen> {
           ],
 
           // Trending Categories section
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Trending Categories',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildCategoryCard(
-                    trendingCategories[0]['name']!,
-                    trendingCategories[0]['icon']!,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildCategoryCard(
-                    trendingCategories[1]['name']!,
-                    trendingCategories[1]['icon']!,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildCategoryCard(
-                    trendingCategories[2]['name']!,
-                    trendingCategories[2]['icon']!,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Expanded(child: SizedBox()),
-              ],
-            ),
-          ),
+          // const Padding(
+          //   padding: EdgeInsets.symmetric(horizontal: 16),
+          //   child: Text(
+          //     'Trending Categories',
+          //     style: TextStyle(
+          //       fontSize: 16,
+          //       fontWeight: FontWeight.w600,
+          //       color: Colors.black87,
+          //     ),
+          //   ),
+          // ),
+          // const SizedBox(height: 16),
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16),
+          //   child: Row(
+          //     children: [
+          //       Expanded(
+          //         child: _buildCategoryCard(
+          //           trendingCategories[0]['name']!,
+          //           trendingCategories[0]['icon']!,
+          //         ),
+          //       ),
+          //       const SizedBox(width: 12),
+          //       Expanded(
+          //         child: _buildCategoryCard(
+          //           trendingCategories[1]['name']!,
+          //           trendingCategories[1]['icon']!,
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
+          // const SizedBox(height: 12),
+          // Padding(
+          //   padding: const EdgeInsets.symmetric(horizontal: 16),
+          //   child: Row(
+          //     children: [
+          //       Expanded(
+          //         child: _buildCategoryCard(
+          //           trendingCategories[2]['name']!,
+          //           trendingCategories[2]['icon']!,
+          //         ),
+          //       ),
+          //       const SizedBox(width: 12),
+          //       const Expanded(child: SizedBox()),
+          //     ],
+          //   ),
+          // ),
           const SizedBox(height: 20),
         ],
       ),
@@ -368,6 +434,206 @@ class _SearchScreenState extends State<SearchScreen> {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchResults() {
+    if (_isLoading) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.headerRed));
+    }
+
+    if (_searchResults.isEmpty) {
+      return const Center(
+        child: Text(
+          'No products found.',
+          style: TextStyle(fontSize: 16, color: Colors.black54),
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.65,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+      ),
+      itemCount: _searchResults.length,
+      itemBuilder: (context, index) {
+        final product = _searchResults[index];
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProductDetailScreen(
+                  productId: product['id'],
+                ),
+              ),
+            );
+          },
+          child: _buildProductCard(product),
+        );
+      },
+    );
+  }
+
+  Widget _buildProductCard(Map<String, dynamic> product) {
+    // Extract product data from API response
+    final productName = product['name'] ?? 'Unknown Product';
+    final images = product['images'] as List<dynamic>?;
+    final imageUrl = images != null && images.isNotEmpty
+        ? images[0]['src'] as String?
+        : null;
+    
+    // Extract price information
+    final price = product['price'] ?? '0';
+    final regularPrice = product['regular_price'] ?? '';
+    final salePrice = product['sale_price'] ?? '';
+    final hasSalePrice = salePrice.isNotEmpty && salePrice != '0';
+    
+    // Extract rating
+    final rating = product['average_rating'] != null
+        ? double.tryParse(product['average_rating'].toString()) ?? 0.0
+        : 0.0;
+    final reviewCount = product['rating_count'] ?? 0;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Product Image
+          Container(
+            height: 130,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF5F5F5),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+            ),
+            child: Stack(
+              children: [
+                if (imageUrl != null)
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                    child: Image.network(
+                      imageUrl,
+                      width: double.infinity,
+                      height: 130,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Center(
+                          child: Icon(
+                            Icons.image_outlined,
+                            size: 50,
+                            color: Colors.grey[400],
+                          ),
+                        );
+                      },
+                    ),
+                  )
+                else
+                  Center(
+                    child: Icon(
+                      Icons.image_outlined,
+                      size: 50,
+                      color: Colors.grey[400],
+                    ),
+                  ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _toggleFavorite(product['id']),
+                    child: Icon(
+                      _favoriteProductIds.contains(product['id'])
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      size: 20,
+                      color: _favoriteProductIds.contains(product['id'])
+                          ? Colors.red
+                          : Colors.black87,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Product Details
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    productName,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                      height: 1.3,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      ...List.generate(
+                        5,
+                        (index) => Icon(
+                          index < rating.floor()
+                              ? Icons.star
+                              : Icons.star_border,
+                          size: 11,
+                          color: const Color(0xFFFDB913),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '($reviewCount)',
+                        style: const TextStyle(fontSize: 9, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Text(
+                        '₹${hasSalePrice ? salePrice : price}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: hasSalePrice
+                              ? const Color(0xFFE63946)
+                              : Colors.black,
+                        ),
+                      ),
+                      if (hasSalePrice && regularPrice.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '₹$regularPrice',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],

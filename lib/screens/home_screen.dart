@@ -1,9 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:carousel_slider/carousel_slider.dart';
 import 'package:html_unescape/html_unescape.dart'; // Add this if not already in pubspec.yaml
 import '../api_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/custom_cached_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
 import '../theme/app_text_styles.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -12,9 +16,12 @@ import 'product_list.dart';
 import 'product_detail_screen.dart'; // ADD THIS LINE
 import 'search_screen.dart';
 import 'wallet_screen.dart';
+import 'shopping_selection_screen.dart';
 import '../widgets/async_state_view.dart';
 import '../widgets/app_loader.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/shimmer_loading.dart';
+import '../widgets/coming_soon_popup.dart';
 import '../token_storage_service.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -37,6 +44,21 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _errorMessage;
   double? _walletBalance;
   bool _isWalletLoading = false;
+  bool _hasWalletNotification = false;
+
+  int _currentBannerIndex = 0;
+  List<Map<String, dynamic>> _bannerImages = [];
+
+  final Map<String, String> _fallbackCategoryImages = {
+    'clothing': 'https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=400&q=80',
+    'toy': 'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?w=400&q=80',
+    'electronic': 'https://images.unsplash.com/photo-1498049794561-7780e7231661?w=400&q=80',
+    'cosmetic': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=400&q=80',
+    'saree': 'https://images.unsplash.com/photo-1583391733958-d25977af1017?w=400&q=80',
+    'kurti': 'https://images.unsplash.com/photo-1617265888251-57c4a179619a?w=400&q=80',
+    'shoe': 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400&q=80',
+    'bag': 'https://images.unsplash.com/photo-1584916201218-f4242ceb4809?w=400&q=80',
+  };
 
   void _openSearch() {
     Navigator.push(
@@ -46,23 +68,21 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openBecomeVendor() async {
+    final url = Uri.parse('https://goodiesworld.in/my-account/');
     try {
-      final uri = Uri.parse('https://goodiesworld.techgigs.in/become-a-vendor/');
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
-        AppSnackBar.show(
-          context,
-          'Unable to open vendor page',
-          type: AppSnackType.error,
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not open the vendor page.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the vendor page.')),
         );
       }
-    } catch (_) {
-      if (!mounted) return;
-      AppSnackBar.show(
-        context,
-        'Unavailable',
-        type: AppSnackType.error,
-      );
     }
   }
 
@@ -100,21 +120,36 @@ class _HomeScreenState extends State<HomeScreen> {
         _hasMoreProducts = true;
       });
 
-      await Future.wait([
-        _fetchProducts(page: 1, append: false),
-        _fetchCategories(),
-      ]);
+      await _fetchCategories();
+      await _fetchBanners();
+      await _fetchProducts(page: 1, append: false);
 
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
       await _loadWalletBalance();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _errorMessage = 'Failed to load data: $e';
         _isLoading = false;
       });
       print('Error fetching data: $e');
+    }
+  }
+
+  Future<void> _fetchBanners() async {
+    try {
+      final banners = await _apiService.getMobileBanners();
+      if (banners.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _bannerImages = banners;
+        });
+      }
+    } catch (e) {
+      print('Error fetching banners: $e');
     }
   }
 
@@ -134,10 +169,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      final balance = await _apiService.getWalletBalance(uid);
+      final results = await Future.wait([
+        _apiService.getWalletBalance(uid),
+        _apiService.checkWalletNotification(uid),
+      ]);
+      
       if (!mounted) return;
       setState(() {
-        _walletBalance = balance;
+        _walletBalance = results[0] as double;
+        _hasWalletNotification = results[1] as bool;
         _isWalletLoading = false;
       });
     } catch (e) {
@@ -151,7 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _fetchProducts({required int page, required bool append}) async {
     try {
       final url =
-          'https://goodiesworld.techgigs.in/wp-json/wc/v3/products?per_page=$_productsPerPage&page=$page';
+          'https://goodiesworld.in/wp-json/wc/v3/products?per_page=$_productsPerPage&page=$page';
       final response = await http.get(
         Uri.parse(url),
         headers: {
@@ -236,18 +276,66 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildFancyLoader() {
-    return const Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppLoader(size: 36),
-          SizedBox(height: 12),
-          Text(
-            'Loading latest products...',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
-          ),
-        ],
+  Widget _buildShimmerHome() {
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 10),
+            // Mock Quick Action Row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                children: const [
+                  Expanded(flex: 4, child: ShimmerContainer(width: double.infinity, height: 50, borderRadius: 18)),
+                  SizedBox(width: 10),
+                  Expanded(flex: 5, child: ShimmerContainer(width: double.infinity, height: 50, borderRadius: 18)),
+                  SizedBox(width: 10),
+                  Expanded(flex: 4, child: ShimmerContainer(width: double.infinity, height: 50, borderRadius: 18)),
+                ],
+              ),
+            ),
+            // Mock Search Bar
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: ShimmerContainer(width: double.infinity, height: 54, borderRadius: 18),
+            ),
+            // Mock Top Categories
+            const ShimmerCategoryList(),
+            // Mock Banners
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: ShimmerContainer(width: double.infinity, height: 180, borderRadius: 16),
+            ),
+            // Mock Products Section
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const ShimmerContainer(width: 150, height: 24),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: const [
+                      Expanded(child: ShimmerProductCard()),
+                      SizedBox(width: 12),
+                      Expanded(child: ShimmerProductCard()),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: const [
+                      Expanded(child: ShimmerProductCard()),
+                      SizedBox(width: 12),
+                      Expanded(child: ShimmerProductCard()),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -258,57 +346,102 @@ class _HomeScreenState extends State<HomeScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: AppColors.yellow,
+        toolbarHeight: 110,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.menu, color: Colors.white),
+          icon: const Icon(Icons.menu, color: Colors.white,size: 30,),
           onPressed: () {
             Navigator.push(
               context,
-              MaterialPageRoute(
-                builder: (context) => const MenuScreen(),
-              ),
+              MaterialPageRoute(builder: (context) => const MenuScreen()),
             );
           },
         ),
-        title: const Text(
-          'Goodies World',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Image.asset(
+            'assets/logo5.png',
+            height: 500, // Large height, allowing the image to be big
+            alignment: Alignment.centerLeft,
           ),
         ),
         actions: [
           GestureDetector(
-            onTap: () {
-              Navigator.push(
+            onTap: () async {
+              // Immediately hide the blinking dot.
+              if (_hasWalletNotification) {
+                setState(() => _hasWalletNotification = false);
+
+                // Tell the backend to mark as read (fire-and-forget).
+                final idStr = await TokenStorageService.getUserId();
+                final uid = int.tryParse(idStr ?? '');
+                if (uid != null) {
+                  _apiService.markWalletNotificationRead(uid);
+                }
+              }
+
+              if (!mounted) return;
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const WalletScreen()),
               );
+
+              // Re-check notification status when returning from wallet screen.
+              if (mounted) {
+                _loadWalletBalance();
+              }
             },
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/chirag.png',height: 40,width: 40
-                ),
-                const Text(
-                  'Check Bonus',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 10,bottom: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Image.asset(
+                        'assets/gennie.png',
+                        height: 80
+                      ),
+                      if (_hasWalletNotification)
+                        const Positioned(
+                          top: 0,
+                          right:5,
+                          child: BlinkingDot(size: 20),
+                        ),
+                    ],
                   ),
-                ),
-              ],
+                  SizedBox(height: 1,),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Colors.orange,
+                        width: 1.5,
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: const Text(
+                      'Check Bonus',
+                      style: TextStyle(
+                        color: Colors.white, // changed for visibility
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                      ),
+                    ),
+                  )
+                ],
+              ),
             ),
           ),
-          const SizedBox(width: 12),
         ],
       ),
       body: _isLoading
-          ? _buildFancyLoader()
+          ? _buildShimmerHome()
           : AsyncStateView(
               isLoading: false,
               errorMessage: _errorMessage,
@@ -319,6 +452,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      SizedBox(height: 10,),
                       _buildQuickActionRow(),
                       _buildHomeSearchBar(),
                       _buildTopCategories(),
@@ -327,11 +461,17 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildMostTrending(),
                       _buildFlashSale(),
                       ..._buildDynamicCategorySections(),
-                      _buildRecentlyViewed(),
+                      // _buildRecentlyViewed(),
                       if (_isLoadingMoreProducts)
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 20),
-                          child: Center(child: AppLoader(size: 24)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                          child: Row(
+                            children: const [
+                              Expanded(child: ShimmerProductCard()),
+                              SizedBox(width: 12),
+                              Expanded(child: ShimmerProductCard()),
+                            ],
+                          ),
                         ),
                       const SizedBox(height: 80),
                     ],
@@ -353,22 +493,22 @@ class _HomeScreenState extends State<HomeScreen> {
           hintStyle: AppTextStyles.hintText,
           prefixIcon: const Icon(
             Icons.search,
-            color: AppColors.textSecondary,
+            color: AppColors.yellow,
           ),
           filled: true,
           fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(vertical: 16),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF9A9AA0), width: 1.3),
+            borderSide: const BorderSide(color: AppColors.yellow, width: 1.3),
           ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF9A9AA0), width: 1.3),
+            borderSide: const BorderSide(color: AppColors.yellow, width: 1.3),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(18),
-            borderSide: const BorderSide(color: Color(0xFF8A8A90), width: 1.4),
+            borderSide: const BorderSide(color: AppColors.yellow, width: 1.4),
           ),
         ),
       ),
@@ -381,32 +521,42 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         children: [
           Expanded(
+            flex: 4,
             child: _quickButton(
               label: 'Shopping',
               icon: Icons.shopping_bag_outlined,
-              backgroundColor: AppColors.yellow,
+              backgroundColor: AppColors.button,
               isSelected: true,
               foregroundColor: Colors.white,
-              onTap: _goToHomeTop,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ShoppingSelectionScreen(),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
+            flex: 5,
             child: _quickButton(
               label: 'Become a Vendor',
               icon: Icons.travel_explore_outlined,
-              backgroundColor: const Color(0xFFF1F2F4),
+              backgroundColor: AppColors.button,
               isSelected: false,
-              foregroundColor: AppColors.textPrimary,
+              foregroundColor: Colors.white,
               onTap: _openBecomeVendor,
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
+            flex: 4,
             child: _quickButton(
               label: 'Wallet',
               icon: Icons.account_balance_wallet_outlined,
-              backgroundColor: AppColors.yellow,
+              backgroundColor: AppColors.button,
               isSelected: true,
               foregroundColor: Colors.white,
               onTap: () {
@@ -445,7 +595,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: backgroundColor,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isSelected ? const Color(0xFFE0B400) : const Color(0xFFD9DCE1),
+              color: isSelected ? const Color(0xFFD9DCE1) : const Color(0xFFD9DCE1),
               width: isSelected ? 1.2 : 1,
             ),
             boxShadow: [
@@ -461,17 +611,20 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Icon(icon, size: 19, color: foregroundColor),
               const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: label == 'Become a Vendor' ? 10.5 : 11.5,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
-                  color: foregroundColor,
-                  height: 1.0,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: label == 'Become a Vendor' ? 10.5 : 11.5,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                    color: foregroundColor,
+                    height: 1.0,
+                  ),
                 ),
               ),
             ],
@@ -495,8 +648,19 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (context, index) {
           final category = categories[index];
           final name = (category['name'] ?? '').toString();
-          final imageUrl = category['image']?['src']?.toString();
+          String? imageUrl = category['image']?['src']?.toString();
           final categoryId = category['id'] as int;
+
+          if (imageUrl == null || imageUrl.isEmpty) {
+            final lowerName = name.toLowerCase();
+            for (var key in _fallbackCategoryImages.keys) {
+              if (lowerName.contains(key)) {
+                imageUrl = _fallbackCategoryImages[key];
+                break;
+              }
+            }
+            imageUrl ??= 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=400&q=80';
+          }
 
           return GestureDetector(
             onTap: () {
@@ -518,7 +682,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     radius: 32,
                     backgroundColor: AppColors.purpleLight,
                     backgroundImage: imageUrl != null && imageUrl.isNotEmpty
-                        ? NetworkImage(imageUrl)
+                        ? CachedNetworkImageProvider(imageUrl) as ImageProvider
                         : null,
                     child: imageUrl == null || imageUrl.isEmpty
                         ? const Icon(Icons.category, color: AppColors.yellow)
@@ -546,69 +710,96 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTopBanners() {
+    if (_bannerImages.isEmpty) return const SizedBox.shrink();
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
       child: Column(
         children: [
-          Container(
-            height: 180,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                colors: [Color(0xFF8CD8F5), Color(0xFF7CE1D2)],
-              ),
+          CarouselSlider(
+            options: CarouselOptions(
+              height: 180,
+              viewportFraction: 1.0,
+              autoPlay: true,
+              autoPlayInterval: const Duration(seconds: 4),
+              onPageChanged: (index, reason) {
+                setState(() {
+                  _currentBannerIndex = index;
+                });
+              },
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Text(
-                    'Kurta sets, sarees...',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+            items: _bannerImages.map((banner) {
+              return Builder(
+                builder: (BuildContext context) {
+                  final imageUrl = banner['image']?.toString() ?? banner['src']?.toString() ?? banner['url']?.toString() ?? '';
+                  final title = banner['title']?.toString();
+                  final subtitle = banner['subtitle']?.toString();
+
+                  return Container(
+                    width: MediaQuery.of(context).size.width,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      image: imageUrl.isNotEmpty
+                          ? DecorationImage(
+                              image: CachedNetworkImageProvider(imageUrl),
+                              fit: BoxFit.cover,
+                              colorFilter: (title != null || subtitle != null)
+                                  ? ColorFilter.mode(Colors.black.withOpacity(0.35), BlendMode.darken)
+                                  : null,
+                            )
+                          : null,
+                      color: AppColors.purpleLight,
                     ),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'From Rs 229',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (title != null && title.isNotEmpty)
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          if (subtitle != null && subtitle.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              subtitle,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Loved styles, limited stock!',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                  );
+                },
+              );
+            }).toList(),
           ),
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              5,
-              (index) => Container(
+            children: _bannerImages.asMap().entries.map((entry) {
+              return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: index == 0 ? 20 : 7,
+                width: _currentBannerIndex == entry.key ? 20 : 7,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: index == 0 ? AppColors.yellow : AppColors.textDisabled,
+                  color: _currentBannerIndex == entry.key
+                      ? AppColors.yellow
+                      : AppColors.textDisabled,
                   borderRadius: BorderRadius.circular(4),
                 ),
-              ),
-            ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -733,7 +924,7 @@ class _HomeScreenState extends State<HomeScreen> {
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: const Color(0xFFFFF0E5),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -782,7 +973,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ElevatedButton(
             onPressed: _openSearch,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.yellow,
+              backgroundColor: AppColors.headerRed,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1106,6 +1297,13 @@ class _ProductCardState extends State<ProductCard> {
   bool _isFavorite = false;
   bool _isToggling = false;
 
+  @override
+  void initState() {
+    super.initState();
+    final productId = (widget.product?['id'] ?? '').toString();
+    _isFavorite = ApiService.wishlistProductIds.contains(productId);
+  }
+
   Future<void> _toggleFavorite() async {
     if (_isToggling || widget.product == null) return;
     final productId = (widget.product!['id'] ?? '').toString();
@@ -1140,7 +1338,11 @@ class _ProductCardState extends State<ProductCard> {
             ? double.tryParse(widget.product!['average_rating'].toString())
             : null);
     int? displayReviews = widget.reviews ?? widget.product?['rating_count'];
-    String? imageUrl = widget.product?['images']?[0]?['src'];
+    String? imageUrl;
+    final images = widget.product?['images'];
+    if (images is List && images.isNotEmpty) {
+      imageUrl = images[0]?['src'];
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -1165,16 +1367,11 @@ class _ProductCardState extends State<ProductCard> {
                     borderRadius: const BorderRadius.vertical(
                       top: Radius.circular(8),
                     ),
-                    child: Image.network(
-                      imageUrl,
+                    child: CustomCachedImage(
+                      imageUrl: imageUrl,
                       width: double.infinity,
                       height: 120,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Center(
-                          child: Icon(Icons.image_not_supported),
-                        );
-                      },
+                      fit: BoxFit.contain,
                     ),
                   ),
                 Positioned(
@@ -1265,6 +1462,62 @@ class _ProductCardState extends State<ProductCard> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class BlinkingDot extends StatefulWidget {
+  final double size;
+  const BlinkingDot({Key? key, this.size = 20}) : super(key: key);
+
+  @override
+  _BlinkingDotState createState() => _BlinkingDotState();
+}
+
+class _BlinkingDotState extends State<BlinkingDot> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+    
+    _animation = Tween<double>(begin: 0.2, end: 1.0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _animation,
+      child: Container(
+        width: widget.size,
+        height: widget.size,
+        decoration: BoxDecoration(
+          color: Colors.green,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2.0),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.red.withOpacity(0.5),
+              blurRadius: 6,
+              spreadRadius: 1.5,
+            ),
+          ],
+        ),
       ),
     );
   }

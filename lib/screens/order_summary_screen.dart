@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:martfury/api_service.dart';
 import 'package:martfury/screens/orders_screen.dart';
 import 'package:martfury/theme/app_colors.dart';
+import 'package:martfury/screens/main_navigation_screen.dart';
 import 'package:martfury/theme/app_text_styles.dart';
 import 'package:martfury/razorpay_config.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:martfury/token_storage_service.dart';
 
 class OrderSummaryScreen extends StatefulWidget {
   const OrderSummaryScreen({
@@ -27,15 +29,37 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
   late Razorpay _razorpay;
   Completer<String>? _paymentCompleter;
   final TextEditingController _noteController = TextEditingController();
+  String _selectedPaymentMethod = 'razorpay';
+  double? _walletBalance;
+  Map<String, dynamic>? _localCartData;
 
   List<dynamic> get _cartItems {
-    final cartItems = widget.cartData['cart_items'];
-    if (cartItems is List) return cartItems;
+    final dataToUse = _localCartData ?? widget.cartData;
+    if (dataToUse.containsKey('cart_items') && dataToUse['cart_items'] is List) {
+      return dataToUse['cart_items'];
+    }
+    if (dataToUse.containsKey('items') && dataToUse['items'] is List) {
+      return dataToUse['items'];
+    }
+    if (dataToUse.containsKey('data') && dataToUse['data'] is List) {
+      return dataToUse['data'];
+    }
     return <dynamic>[];
   }
 
+  /// Returns true when the screen was opened via "Buy Now" with a
+  /// locally-built single-item cart (no server-side cart key).
+  bool get _isBuyNowMode {
+    final data = _localCartData ?? widget.cartData;
+    // The synthetic Buy Now cart has 'cart_items' but never 'cart_key'.
+    return !data.containsKey('cart_key');
+  }
+
   double get _cartTotal {
-    final rawTotal = widget.cartData['cart_total'] ??
+    final rawTotal = _localCartData?['cart_total'] ??
+        _localCartData?['total'] ??
+        _localCartData?['cart_totals']?['total'] ??
+        widget.cartData['cart_total'] ??
         widget.cartData['total'] ??
         widget.cartData['cart_totals']?['total'] ??
         '0';
@@ -46,6 +70,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchWalletBalance();
     _razorpay = Razorpay();
 
     _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) {
@@ -67,6 +92,134 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
             .completeError(Exception(response.walletName ?? 'External wallet selected'));
       }
     });
+  }
+
+  Future<void> _fetchWalletBalance() async {
+    try {
+      final idStr = await TokenStorageService.getUserId();
+      final uid = int.tryParse(idStr ?? '');
+      if (uid != null) {
+        final balance = await _apiService.getWalletBalance(uid);
+        if (mounted) {
+          setState(() {
+            _walletBalance = balance;
+            if (_selectedPaymentMethod == 'wallet' && balance < _cartTotal) {
+              _selectedPaymentMethod = 'razorpay';
+            }
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _updateQuantity(String productId, int newQuantity, String? variationId) async {
+    if (newQuantity < 1) return;
+    try {
+      setState(() => _isPlacingOrder = true);
+      await _apiService.updateCartItem(productId: productId, quantity: newQuantity, variationId: variationId);
+
+      if (_isBuyNowMode) {
+        // Update the local single-item cart directly instead of
+        // re-fetching the full server cart.
+        final data = Map<String, dynamic>.from(_localCartData ?? widget.cartData);
+        final items = List<dynamic>.from(data['cart_items'] ?? []);
+        for (int i = 0; i < items.length; i++) {
+          final row = Map<String, dynamic>.from(items[i] as Map);
+          if (row['product_id'].toString() == productId) {
+            final unitPrice = _effectiveUnitPrice(row);
+            row['quantity'] = newQuantity.toString();
+            final lineTotal = unitPrice * newQuantity;
+            row['subtotal'] = lineTotal.toStringAsFixed(2);
+            row['line_total'] = lineTotal.toStringAsFixed(2);
+            row['total'] = lineTotal.toStringAsFixed(2);
+            items[i] = row;
+          }
+        }
+        data['cart_items'] = items;
+        // Recalculate cart total
+        double total = 0;
+        for (final item in items) {
+          total += double.tryParse((item as Map)['line_total']?.toString() ?? '0') ?? 0;
+        }
+        data['cart_total'] = total.toStringAsFixed(2);
+
+        if (mounted) {
+          setState(() {
+            _localCartData = data;
+            _isPlacingOrder = false;
+            if (_selectedPaymentMethod == 'wallet' && _walletBalance != null && _walletBalance! < _cartTotal) {
+              _selectedPaymentMethod = 'razorpay';
+            }
+          });
+        }
+      } else {
+        final newData = await _apiService.getCart();
+        if (mounted) {
+          setState(() {
+            _localCartData = newData;
+            _isPlacingOrder = false;
+            if (_selectedPaymentMethod == 'wallet' && _walletBalance != null && _walletBalance! < _cartTotal) {
+              _selectedPaymentMethod = 'razorpay';
+            }
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isPlacingOrder = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update quantity: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _removeItem(String productId) async {
+    try {
+      setState(() => _isPlacingOrder = true);
+      await _apiService.removeFromCart(productId: productId);
+
+      if (_isBuyNowMode) {
+        // Remove item locally and update totals.
+        final data = Map<String, dynamic>.from(_localCartData ?? widget.cartData);
+        final items = List<dynamic>.from(data['cart_items'] ?? []);
+        items.removeWhere((item) => (item as Map)['product_id'].toString() == productId);
+        data['cart_items'] = items;
+        double total = 0;
+        for (final item in items) {
+          total += double.tryParse((item as Map)['line_total']?.toString() ?? '0') ?? 0;
+        }
+        data['cart_total'] = total.toStringAsFixed(2);
+
+        if (mounted) {
+          setState(() {
+            _localCartData = data;
+            _isPlacingOrder = false;
+            if (_selectedPaymentMethod == 'wallet' && _walletBalance != null && _walletBalance! < _cartTotal) {
+              _selectedPaymentMethod = 'razorpay';
+            }
+          });
+        }
+      } else {
+        final newData = await _apiService.getCart();
+        if (mounted) {
+          setState(() {
+            _localCartData = newData;
+            _isPlacingOrder = false;
+            if (_selectedPaymentMethod == 'wallet' && _walletBalance != null && _walletBalance! < _cartTotal) {
+              _selectedPaymentMethod = 'razorpay';
+            }
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isPlacingOrder = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to remove item: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   double get _subTotal {
@@ -158,29 +311,6 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
       final customerEmail = address['email']?.toString() ?? '';
       final customerPhone = address['phone']?.toString() ?? '';
 
-      _paymentCompleter = Completer<String>();
-
-      _razorpay.open({
-        'key': RazorpayConfig.keyId,
-        'amount': amountPaise,
-        'currency': 'INR',
-        'name': 'Goodies World',
-        'description': 'Order payment',
-        'prefill': {
-          'contact': customerPhone,
-          'email': customerEmail,
-          'name': customerName.isNotEmpty ? customerName : 'Customer',
-        },
-        'theme': {
-          'color': '#4B1F78',
-        },
-      });
-
-      final paymentId = await _paymentCompleter!.future;
-      if (paymentId.isEmpty) {
-        throw Exception('Payment id is empty');
-      }
-
       final billing = <String, dynamic>{
         'first_name': address['first_name'] ?? '',
         'last_name': address['last_name'] ?? '',
@@ -221,19 +351,82 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
         };
       }).toList();
 
-      final result = await _apiService.createOrder(
-        billing: billing,
-        shipping: shipping,
-        lineItems: lineItems,
-        paymentMethod: 'razorpay',
-        paymentMethodTitle: 'Razorpay',
-        setPaid: true,
-        transactionId: paymentId,
-      );
+      String orderId = '';
 
-      final orderId =
-          (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ??
-              '';
+      if (_selectedPaymentMethod == 'razorpay') {
+        _paymentCompleter = Completer<String>();
+
+        _razorpay.open({
+          'key': RazorpayConfig.keyId,
+          'amount': amountPaise,
+          'currency': 'INR',
+          'name': 'Goodies World',
+          'description': 'Order payment',
+          'prefill': {
+            'contact': customerPhone,
+            'email': customerEmail,
+            'name': customerName.isNotEmpty ? customerName : 'Customer',
+          },
+          'theme': {
+            'color': '#4B1F78',
+          },
+        });
+
+        final paymentId = await _paymentCompleter!.future;
+        if (paymentId.isEmpty) {
+          throw Exception('Payment id is empty');
+        }
+
+        final result = await _apiService.createOrder(
+          billing: billing,
+          shipping: shipping,
+          lineItems: lineItems,
+          paymentMethod: 'razorpay',
+          paymentMethodTitle: 'Razorpay',
+          setPaid: true,
+          transactionId: paymentId,
+        );
+        orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
+      } else if (_selectedPaymentMethod == 'wallet') {
+        if (_walletBalance == null || _walletBalance! < _cartTotal) {
+          throw Exception('Insufficient wallet balance to place this order.');
+        }
+
+        final idStr = await TokenStorageService.getUserId();
+        final uid = int.tryParse(idStr ?? '');
+        if (uid == null) {
+          throw Exception('User id not found. Please login again.');
+        }
+
+        final result = await _apiService.createOrder(
+          billing: billing,
+          shipping: shipping,
+          lineItems: lineItems,
+          paymentMethod: 'wallet',
+          paymentMethodTitle: 'Wallet Payment',
+          setPaid: false,
+        );
+        
+        orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
+        if (orderId.isEmpty) {
+          throw Exception('Failed to create order before wallet deduction.');
+        }
+
+        await _apiService.payFromWallet(
+          userId: uid,
+          orderId: int.parse(orderId),
+        );
+      } else if (_selectedPaymentMethod == 'cod') {
+        final result = await _apiService.createOrder(
+          billing: billing,
+          shipping: shipping,
+          lineItems: lineItems,
+          paymentMethod: 'cod',
+          paymentMethodTitle: 'Cash on Delivery',
+          setPaid: false,
+        );
+        orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
+      }
 
       if (!mounted) return;
 
@@ -273,7 +466,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Order Summary', style: TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: Stack(
@@ -301,6 +494,9 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 14),
+              _sectionTitle('Payment Method'),
+              _paymentMethodSelector(),
               const SizedBox(height: 14),
               _totalCard(),
               const SizedBox(height: 8),
@@ -333,7 +529,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
           child: ElevatedButton(
             onPressed: _isPlacingOrder ? null : _placeOrder,
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.yellow,
+              backgroundColor: AppColors.headerRed,
               padding: const EdgeInsets.symmetric(vertical: 14),
             ),
             child: _isPlacingOrder
@@ -351,6 +547,79 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                   ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _paymentMethodSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.purpleLight),
+      ),
+      child: Column(
+        children: [
+          RadioListTile<String>(
+            title: Row(
+              children: const [
+                Icon(Icons.credit_card, color: AppColors.textPrimary),
+                SizedBox(width: 10),
+                Text('Razorpay (Cards, UPI, NetBanking)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              ],
+            ),
+            value: 'razorpay',
+            groupValue: _selectedPaymentMethod,
+            activeColor: AppColors.headerRed,
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedPaymentMethod = val);
+            },
+          ),
+          const Divider(height: 1),
+          RadioListTile<String>(
+            title: Row(
+              children: [
+                Icon(Icons.account_balance_wallet, color: (_walletBalance != null && _walletBalance! >= _cartTotal) ? AppColors.yellow : Colors.grey),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Pay from Wallet', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: (_walletBalance != null && _walletBalance! >= _cartTotal) ? AppColors.textPrimary : Colors.grey)),
+                    if (_walletBalance != null)
+                      if (_walletBalance! >= _cartTotal)
+                        Text('Available Balance: ₹${_walletBalance!.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary))
+                      else
+                        const Text('Wallet balance is insufficient', style: TextStyle(fontSize: 12, color: Colors.red, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ],
+            ),
+            value: 'wallet',
+            groupValue: _selectedPaymentMethod,
+            activeColor: AppColors.headerRed,
+            onChanged: (_walletBalance != null && _walletBalance! >= _cartTotal)
+                ? (val) {
+                    if (val != null) setState(() => _selectedPaymentMethod = val);
+                  }
+                : null,
+          ),
+          const Divider(height: 1),
+          RadioListTile<String>(
+            title: Row(
+              children: const [
+                Icon(Icons.local_shipping_outlined, color: AppColors.textPrimary),
+                SizedBox(width: 10),
+                Text('Cash on Delivery (COD)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              ],
+            ),
+            value: 'cod',
+            groupValue: _selectedPaymentMethod,
+            activeColor: AppColors.headerRed,
+            onChanged: (val) {
+              if (val != null) setState(() => _selectedPaymentMethod = val);
+            },
+          ),
+        ],
       ),
     );
   }
@@ -473,18 +742,63 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '₹${unitPrice.toStringAsFixed(2)} x $quantity',
+                    '₹${unitPrice.toStringAsFixed(2)}',
                     style: AppTextStyles.caption,
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    height: 28,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28),
+                          icon: const Icon(Icons.remove, size: 14, color: AppColors.textPrimary),
+                          onPressed: () => _updateQuantity(item['product_id']?.toString() ?? '', quantity - 1, item['variation_id']?.toString()),
+                        ),
+                        Container(
+                          width: 28,
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$quantity',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 28),
+                          icon: const Icon(Icons.add, size: 14, color: AppColors.textPrimary),
+                          onPressed: () => _updateQuantity(item['product_id']?.toString() ?? '', quantity + 1, item['variation_id']?.toString()),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-            Text(
-              '₹${subtotal.toStringAsFixed(2)}',
-              style: AppTextStyles.body1.copyWith(
-                fontWeight: FontWeight.w700,
-                color: AppColors.yellow,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                  onPressed: () => _removeItem(item['product_id']?.toString() ?? ''),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '₹${subtotal.toStringAsFixed(2)}',
+                  style: AppTextStyles.body1.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.yellow,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -627,7 +941,7 @@ class _OrderSuccessSheet extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.yellow,
+                  backgroundColor: AppColors.headerRed,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
@@ -635,13 +949,13 @@ class _OrderSuccessSheet extends StatelessWidget {
                 ),
                 onPressed: () {
                   final nav = Navigator.of(context);
-                  nav.pop();
-                  nav.push(
-                    MaterialPageRoute(builder: (_) => const OrdersScreen()),
+                  nav.pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const MainNavigationScreen()),
+                    (route) => false,
                   );
                 },
                 child: const Text(
-                  'View My Orders',
+                  'Back to Home',
                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
                 ),
               ),

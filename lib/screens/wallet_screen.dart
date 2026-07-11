@@ -4,6 +4,8 @@ import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/theme/app_text_styles.dart';
 import 'package:martfury/token_storage_service.dart';
 import 'package:martfury/widgets/async_state_view.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:martfury/razorpay_config.dart';
 
 class WalletScreen extends StatefulWidget {
   const WalletScreen({super.key});
@@ -26,20 +28,169 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   double _lockedBalance = 0;
 
   List<Map<String, dynamic>> _transactions = [];
-  List<Map<String, dynamic>> _withdrawRequests = [];
 
   bool _isSubmittingWithdraw = false;
+  late Razorpay _razorpay;
+  double? _addingAmount;
+  
+  bool _showBonusTooltip = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
   @override
   void dispose() {
+    _razorpay.clear();
     _amountController.dispose();
     super.dispose();
+  }
+
+  void _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    if (_addingAmount == null || _userId == null) return;
+    
+    setState(() => _isLoading = true);
+    try {
+      final res = await _apiService.addWalletBalance(
+        userId: _userId!,
+        amount: _addingAmount!,
+        note: 'Wallet Recharge via Razorpay (${response.paymentId})',
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text((res['message'] ?? 'Wallet balance added successfully').toString()),
+          backgroundColor: Colors.green,
+        ),
+      );
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to update wallet: $e'), backgroundColor: Colors.red),
+      );
+      setState(() => _isLoading = false);
+    } finally {
+      _addingAmount = null;
+    }
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    _addingAmount = null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Payment failed: ${response.message}'), backgroundColor: Colors.red),
+    );
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    _addingAmount = null;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('External wallet selected: ${response.walletName}')),
+    );
+  }
+
+  void _startAddBalanceFlow() {
+    final TextEditingController amountCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Add Balance',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Enter the amount you wish to top up.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                ),
+                const SizedBox(height: 32),
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    prefixText: '₹ ',
+                    prefixStyle: const TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                    border: InputBorder.none,
+                    hintText: '0',
+                    hintStyle: TextStyle(fontSize: 36, fontWeight: FontWeight.w700, color: Colors.grey.shade300),
+                  ),
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 54,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.headerRed,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                    onPressed: () {
+                      final amount = double.tryParse(amountCtrl.text.trim());
+                      if (amount == null || amount <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter a valid amount')),
+                        );
+                        return;
+                      }
+                      Navigator.pop(ctx);
+                      _addingAmount = amount;
+                      
+                      final amountPaise = (amount * 100).round();
+                      _razorpay.open({
+                        'key': RazorpayConfig.keyId,
+                        'amount': amountPaise,
+                        'currency': 'INR',
+                        'name': 'Goodies World',
+                        'description': 'Wallet Recharge',
+                        'theme': {
+                          'color': '#4B1F78',
+                        },
+                      });
+                    },
+                    child: const Text('Proceed to Pay', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _load() async {
@@ -67,8 +218,25 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
         _walletBalance = results[0] as double;
         _usableBalance = results[1] as double;
         _lockedBalance = results[2] as double;
-        _transactions = (results[3] as List).cast<Map<String, dynamic>>();
-        _withdrawRequests = (results[4] as List).cast<Map<String, dynamic>>();
+        
+        final transactions = (results[3] as List).cast<Map<String, dynamic>>();
+        final withdraws = (results[4] as List).cast<Map<String, dynamic>>();
+        
+        // Map withdraws to transaction format so they render correctly in the history
+        final withdrawTransactions = withdraws.map((w) => {
+          'amount': w['amount'],
+          'type': 'debit', // Withdraw is always a debit
+          'transaction_type': 'Withdraw Request (${(w['status'] ?? 'pending').toString().toUpperCase()})',
+          'date': w['created_at'] ?? w['date'] ?? '',
+        }).toList();
+
+        // Combine both lists and sort by date descending
+        _transactions = [...withdrawTransactions, ...transactions];
+        _transactions.sort((a, b) {
+          final dateA = DateTime.tryParse((a['date'] ?? '').toString()) ?? DateTime(2000);
+          final dateB = DateTime.tryParse((b['date'] ?? '').toString()) ?? DateTime(2000);
+          return dateB.compareTo(dateA);
+        });
         _isLoading = false;
       });
     } catch (e) {
@@ -117,46 +285,29 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          backgroundColor: AppColors.yellow,
-          title: const Text('Wallet', style: TextStyle(color: Colors.white)),
-          iconTheme: const IconThemeData(color: Colors.white),
-          actions: [
-            IconButton(
-              onPressed: _isLoading ? null : _load,
-              icon: const Icon(Icons.refresh, color: Colors.white),
-            ),
-          ],
-          bottom: const TabBar(
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white70,
-            indicatorColor: Colors.white,
-            tabs: [
-              Tab(text: 'Transactions'),
-              Tab(text: 'Withdraw History'),
-            ],
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.headerRed,
+        title: const Text('Wallet', style: TextStyle(color: Colors.white)),
+        iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            onPressed: _isLoading ? null : _load,
+            icon: const Icon(Icons.refresh, color: Colors.white),
           ),
-        ),
-        body: AsyncStateView(
-          isLoading: _isLoading,
-          errorMessage: _error,
-          onRetry: _load,
-          child: TabBarView(
-            children: [
-              _buildContent(showWithdrawHistory: false),
-              _buildContent(showWithdrawHistory: true),
-            ],
-          ),
-        ),
+        ],
+      ),
+      body: AsyncStateView(
+        isLoading: _isLoading,
+        errorMessage: _error,
+        onRetry: _load,
+        child: _buildContent(),
       ),
     );
   }
 
-  Widget _buildContent({required bool showWithdrawHistory}) {
+  Widget _buildContent() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -167,11 +318,11 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
         _withdrawCard(),
         const SizedBox(height: 16),
         Text(
-          showWithdrawHistory ? 'Withdraw requests' : 'Transactions',
+          'Transaction history',
           style: AppTextStyles.heading2,
         ),
         const SizedBox(height: 10),
-        if (showWithdrawHistory) _withdrawHistoryList() else _transactionList(),
+        _transactionHistoryList(),
         const SizedBox(height: 24),
       ],
     );
@@ -179,103 +330,217 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
 
   Widget _balanceCard() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: AppColors.yellow,
-        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          colors: [AppColors.headerRed, Color(0xFF962323)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
+            color: AppColors.headerRed.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Wallet Balance',
-            style: AppTextStyles.body2.copyWith(color: Colors.white70),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Wallet Balance',
+                style: AppTextStyles.body2.copyWith(color: Colors.white70, fontWeight: FontWeight.w500),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text('Active', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+              )
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             '₹${_walletBalance.toStringAsFixed(2)}',
             style: AppTextStyles.heading1.copyWith(
               color: Colors.white,
-              fontSize: 28,
+              fontSize: 36,
+              letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 24),
           Row(
             children: [
               Expanded(
                 child: _miniStat('Usable', _usableBalance),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
-                child: _miniStat('Locked', _lockedBalance),
+                child: _miniStat(
+                  'Bonus',
+                  _lockedBalance,
+                  hasLock: true,
+                  onTap: () {
+                    setState(() {
+                      _showBonusTooltip = !_showBonusTooltip;
+                    });
+                  },
+                ),
               ),
             ],
           ),
+          if (_showBonusTooltip)
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  width: 220,
+                  child: _buildTooltip(),
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _miniStat(String label, double value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+  Widget _buildTooltip() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(right: 30),
+          child: CustomPaint(
+            size: const Size(14, 8),
+            painter: TrianglePainter(color: Colors.black87),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Expanded(
+                child: Text(
+                  'This bonus will be usable after 7 days',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() {
+                    _showBonusTooltip = false;
+                  });
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(4.0),
+                  child: Icon(Icons.close, color: Colors.white, size: 16),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _miniStat(String label, double value, {bool hasLock = false, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.18)),
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: AppTextStyles.caption.copyWith(color: Colors.white70)),
-          const SizedBox(height: 4),
+          Row(
+            children: [
+              Text(label, style: AppTextStyles.caption.copyWith(color: Colors.white70, fontWeight: FontWeight.w500)),
+              if (hasLock) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.lock, color: Colors.white70, size: 12),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
           Text(
             '₹${value.toStringAsFixed(2)}',
             style: AppTextStyles.body1.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w700,
+              fontSize: 16,
             ),
           ),
         ],
+      ),
       ),
     );
   }
 
   Widget _quickActions() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
+        spacing: 16,
+        runSpacing: 16,
         children: [
-          _actionTile(Icons.add_circle_outline, 'Add Balance'),
-          _actionTile(Icons.compare_arrows, 'Wallet Transfer'),
-          _actionTile(Icons.account_balance_wallet_outlined, 'Withdraw Request'),
-          _actionTile(Icons.group_outlined, 'Wallet Referral'),
-          _actionTile(Icons.verified_user_outlined, 'KYC Verification'),
+          _actionTile(Icons.add_circle_outline, 'Add Balance', Colors.blue),
+          // _actionTile(Icons.compare_arrows, 'Transfer', Colors.orange),
+          _actionTile(Icons.account_balance_wallet_outlined, 'Withdraw', Colors.green),
+          // _actionTile(Icons.group_outlined, 'Referral', Colors.purple),
+          // _actionTile(Icons.verified_user_outlined, 'KYC Info', Colors.red),
         ],
       ),
     );
   }
 
-  Widget _actionTile(IconData icon, String label) {
+  Widget _actionTile(IconData icon, String label, MaterialColor color) {
     return SizedBox(
-      width: (MediaQuery.of(context).size.width - 16 * 2 - 12 * 2) / 3,
+      width: (MediaQuery.of(context).size.width - 32 * 2 - 16 * 2) / 3,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: () async {
-          if (label == 'Withdraw Request') {
+          if (label == 'Withdraw' || label == 'Withdraw Request') {
             final ctx = _withdrawCardKey.currentContext;
             if (ctx != null) {
               await Scrollable.ensureVisible(
@@ -286,33 +551,38 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
             }
             return;
           }
+          if (label == 'Add Balance') {
+            _startAddBalanceFlow();
+            return;
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('$label coming soon')),
           );
         },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-          decoration: BoxDecoration(
-            color: AppColors.purpleLight,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: AppColors.yellow),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: color.shade50,
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
+              child: Icon(icon, color: color.shade600, size: 26),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -321,40 +591,77 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
   Widget _withdrawCard() {
     return Container(
       key: _withdrawCardKey,
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Enter Amount (₹)', style: AppTextStyles.body2),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _amountController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              hintText: '100',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.purpleLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.account_balance_wallet_outlined, color: AppColors.yellow, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Withdraw Money',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: TextField(
+              controller: _amountController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                prefixText: '₹ ',
+                prefixStyle: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                hintText: '0',
+                hintStyle: TextStyle(fontSize: 24, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           SizedBox(
-            width: 140,
+            width: double.infinity,
+            height: 50,
             child: ElevatedButton(
               onPressed: _isSubmittingWithdraw ? null : _submitWithdraw,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.yellow,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                backgroundColor: AppColors.headerRed,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
               ),
               child: _isSubmittingWithdraw
                   ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                     )
-                  : const Text('Proceed', style: TextStyle(color: Colors.white)),
+                  : const Text('Submit Request', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -362,73 +669,49 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     );
   }
 
-  Widget _transactionList() {
+
+  Widget _transactionHistoryList() {
     if (_transactions.isEmpty) {
       return _emptyList('No transactions found');
     }
     return Column(
-      children: _transactions.map((t) {
-        final type = (t['transaction_type'] ?? '').toString();
-        final amount = double.tryParse((t['amount'] ?? '0').toString()) ?? 0;
-        final date = (t['date'] ?? '').toString();
-        final isCredit = type.toLowerCase() == 'credit';
+      children: _transactions.map((r) {
+        final amount = double.tryParse((r['amount'] ?? r['total'] ?? '0').toString()) ?? 0;
+        final typeStr = (r['transaction_type_1'] ?? r['type'] ?? r['transaction_type'] ?? '').toString().toLowerCase();
+        final isCredit = typeStr == 'credit' || typeStr.contains('credit');
+        
+        String details = (r['note'] ?? r['details'] ?? '').toString().trim();
+        String titleText = (r['transaction_type'] ?? '').toString().trim();
+        if (titleText.isEmpty || titleText.toLowerCase() == 'debit' || titleText.toLowerCase() == 'credit') {
+          if (details.isNotEmpty) {
+            titleText = details;
+          }
+        }
+        if (titleText.isEmpty) titleText = 'Transaction';
+
+        final date = (r['date'] ?? r['created_at'] ?? '').toString();
+
         return _listCard(
-          icon: isCredit ? Icons.add : Icons.remove,
-          title: isCredit ? 'Credit' : 'Debit',
+          icon: isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+          iconColor: isCredit ? Colors.green : Colors.red,
+          title: titleText,
           subtitle: date,
           trailing: Text(
             '${isCredit ? '+' : '-'}₹${amount.toStringAsFixed(2)}',
-            style: AppTextStyles.body1.copyWith(
-              fontWeight: FontWeight.w700,
-              color: isCredit ? AppColors.success : AppColors.error,
+            style: TextStyle(
+              color: isCredit ? Colors.green : Colors.red,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
             ),
           ),
         );
       }).toList(),
     );
-  }
-
-  Widget _withdrawHistoryList() {
-    if (_withdrawRequests.isEmpty) {
-      return _emptyList('No withdraw requests');
-    }
-    return Column(
-      children: _withdrawRequests.map((r) {
-        final amount = double.tryParse((r['amount'] ?? '0').toString()) ?? 0;
-        final status = (r['status'] ?? '').toString();
-        final createdAt = (r['created_at'] ?? '').toString();
-        return _listCard(
-          icon: Icons.account_balance_wallet_outlined,
-          title: '₹${amount.toStringAsFixed(2)}',
-          subtitle: createdAt,
-          trailing: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: _statusColor(status).withOpacity(0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              status,
-              style: AppTextStyles.caption.copyWith(
-                fontWeight: FontWeight.w700,
-                color: _statusColor(status),
-              ),
-            ),
-          ),
-        );
-      }).toList(),
-    );
-  }
-
-  Color _statusColor(String status) {
-    final s = status.toLowerCase();
-    if (s.contains('approved') || s.contains('completed')) return AppColors.success;
-    if (s.contains('rejected') || s.contains('failed')) return AppColors.error;
-    return AppColors.warning;
   }
 
   Widget _listCard({
     required IconData icon,
+    Color iconColor = AppColors.yellow,
     required String title,
     required String subtitle,
     required Widget trailing,
@@ -451,10 +734,10 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: AppColors.purpleLight,
+            color: iconColor.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: AppColors.yellow),
+          child: Icon(icon, color: iconColor),
         ),
         title: Text(title, style: AppTextStyles.body1.copyWith(fontWeight: FontWeight.w600)),
         subtitle: Text(subtitle, style: AppTextStyles.caption),
@@ -475,5 +758,25 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       ),
     );
   }
+}
+
+class TrianglePainter extends CustomPainter {
+  final Color color;
+
+  TrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path();
+    path.moveTo(size.width / 2, 0); // Top center
+    path.lineTo(0, size.height); // Bottom left
+    path.lineTo(size.width, size.height); // Bottom right
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
 

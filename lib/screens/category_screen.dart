@@ -9,7 +9,12 @@ import '../theme/app_text_styles.dart';
 import '../widgets/app_snackbar.dart';
 
 class CategoryScreen extends StatefulWidget {
-  const CategoryScreen({Key? key}) : super(key: key);
+  final bool initialIsEatableTab;
+
+  const CategoryScreen({
+    Key? key,
+    this.initialIsEatableTab = true,
+  }) : super(key: key);
 
   @override
   State<CategoryScreen> createState() => _CategoryScreenState();
@@ -20,17 +25,26 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
   final ApiService _apiService = ApiService();
 
-  List<Map<String, dynamic>> mainCategories = [];
+  List<Map<String, dynamic>> eatableCategories = [];
+  List<Map<String, dynamic>> otherCategories = [];
   Map<int, List<Map<String, dynamic>>> subcategoriesMap = {};
   List<Map<String, dynamic>> categoryProducts = [];
   bool isLoading = true;
   bool isLoadingProducts = false;
   String? selectedCategory;
   int? selectedCategoryId;
+  late bool isEatableTab;
+
+  // Add your eatable category names here (case-insensitive)
+  final List<String> eatableKeywords = [
+    'grocery', 'groceries', 'snack', 'snacks', 'beverage', 'beverages',
+    'food', 'eatable', 'eatables', 'fruits', 'vegetables', 'meat', 'dairy', 'bakery'
+  ];
 
   @override
   void initState() {
     super.initState();
+    isEatableTab = widget.initialIsEatableTab;
     fetchCategories();
   }
 
@@ -42,7 +56,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
       print('Total categories fetched: ${allCategories.length}');
 
       // Separate main categories (parent = 0) and subcategories
-      List<Map<String, dynamic>> main = [];
+      List<Map<String, dynamic>> eatables = [];
+      List<Map<String, dynamic>> others = [];
       Map<int, List<Map<String, dynamic>>> subMap = {};
 
       for (var category in allCategories) {
@@ -50,35 +65,50 @@ class _CategoryScreenState extends State<CategoryScreen> {
         category['name'] = _decodeHtmlEntities(category['name']);
 
         if (category['parent'] == 0) {
-          main.add(category);
-          print('Main category: ${category['name']} (ID: ${category['id']})');
+          final nameLower = category['name'].toString().toLowerCase();
+          bool isEatable = eatableKeywords.any((keyword) => nameLower.contains(keyword));
+          if (isEatable) {
+            eatables.add(category);
+          } else {
+            others.add(category);
+          }
         } else {
           int parentId = category['parent'];
           if (!subMap.containsKey(parentId)) {
             subMap[parentId] = [];
           }
           subMap[parentId]!.add(category);
-          print('Sub category: ${category['name']} (Parent ID: $parentId)');
         }
       }
 
+      if (!mounted) return;
       setState(() {
-        mainCategories = main;
+        eatableCategories = eatables;
+        otherCategories = others;
         subcategoriesMap = subMap;
         isLoading = false;
 
-        if (mainCategories.isNotEmpty) {
-          selectedCategory = mainCategories[0]['name'];
-          selectedCategoryId = mainCategories[0]['id'];
-          // Fetch products for the first category
-          _fetchCategoryProducts(mainCategories[0]['id']);
-        }
+        _selectFirstCategoryInTab();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() => isLoading = false);
       if (mounted) {
         AppSnackBar.show(context, 'Error fetching categories: $e', type: AppSnackType.error);
       }
+    }
+  }
+
+  void _selectFirstCategoryInTab() {
+    final activeList = isEatableTab ? eatableCategories : otherCategories;
+    if (activeList.isNotEmpty) {
+      selectedCategory = activeList[0]['name'];
+      selectedCategoryId = activeList[0]['id'];
+      _fetchCategoryProducts(activeList[0]['id']);
+    } else {
+      selectedCategory = null;
+      selectedCategoryId = null;
+      categoryProducts = [];
     }
   }
 
@@ -88,7 +118,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
     });
 
     try {
-      final url = 'https://goodiesworld.techgigs.in/wp-json/wc/v3/products?category=$categoryId&per_page=100';
+      final url = 'https://goodiesworld.in/wp-json/wc/v3/products?category=$categoryId&per_page=100';
       final response = await http.get(
         Uri.parse(url),
         headers: {
@@ -98,6 +128,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
 
       if (response.statusCode == 200) {
         List<dynamic> data = json.decode(response.body);
+        if (!mounted) return;
         setState(() {
           categoryProducts = data.map((e) => Map<String, dynamic>.from(e)).toList();
           isLoadingProducts = false;
@@ -106,6 +137,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
         throw Exception('Failed to load products: ${response.statusCode}');
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         isLoadingProducts = false;
         categoryProducts = [];
@@ -228,10 +260,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
     return Scaffold(
       backgroundColor: AppColors.scaffoldBackground,
       appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(132),
+        preferredSize: const Size.fromHeight(200),
         child: AppBar(
           automaticallyImplyLeading: false,
-          backgroundColor: AppColors.yellow,
+          backgroundColor: AppColors.headerRed,
           elevation: 0,
           flexibleSpace: SafeArea(
             child: Padding(
@@ -239,7 +271,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 20),
                   Text(
                     'Shop by Category',
                     style: AppTextStyles.heading2.copyWith(
@@ -304,6 +336,71 @@ class _CategoryScreenState extends State<CategoryScreen> {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  // Toggle Switch
+                  Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0x33FFFFFF),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              if (!isEatableTab) {
+                                setState(() {
+                                  isEatableTab = true;
+                                  _selectFirstCategoryInTab();
+                                });
+                              }
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: isEatableTab ? Colors.white : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Eatables',
+                                style: TextStyle(
+                                  color: isEatableTab ? AppColors.headerRed : Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              if (isEatableTab) {
+                                setState(() {
+                                  isEatableTab = false;
+                                  _selectFirstCategoryInTab();
+                                });
+                              }
+                            },
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: !isEatableTab ? Colors.white : Colors.transparent,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              alignment: Alignment.center,
+                              child: Text(
+                                'Other Items',
+                                style: TextStyle(
+                                  color: !isEatableTab ? AppColors.headerRed : Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -312,8 +409,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : mainCategories.isEmpty
-          ? const Center(child: Text('No categories available'))
+          : (isEatableTab ? eatableCategories : otherCategories).isEmpty
+          ? Center(child: Text('No categories available in ${isEatableTab ? 'Eatables' : 'Other Items'}'))
           : Column(
         children: [
           Expanded(
@@ -325,12 +422,14 @@ class _CategoryScreenState extends State<CategoryScreen> {
                   flex: 4,
                   child: Container(
                     color: Colors.white,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      itemCount: mainCategories.length,
-                      itemBuilder: (context, index) {
-                        final category = mainCategories[index];
-                        final isSelected = category['name'] == selectedCategory;
+                    child: Builder(builder: (context) {
+                      final activeList = isEatableTab ? eatableCategories : otherCategories;
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: activeList.length,
+                        itemBuilder: (context, index) {
+                          final category = activeList[index];
+                          final isSelected = category['name'] == selectedCategory;
                         final categoryName = category['name'];
                         final subCount = subcategoriesMap[category['id']]?.length ?? 0;
 
@@ -389,7 +488,8 @@ class _CategoryScreenState extends State<CategoryScreen> {
                           ),
                         );
                       },
-                    ),
+                    );
+                    }),
                   ),
                 ),
 
@@ -593,6 +693,13 @@ class _ProductCardState extends State<ProductCard> {
   bool _isFavorite = false;
   bool _isToggling = false;
 
+  @override
+  void initState() {
+    super.initState();
+    final productId = (widget.product['id'] ?? '').toString();
+    _isFavorite = ApiService.wishlistProductIds.contains(productId);
+  }
+
   Future<void> _toggleFavorite() async {
     if (_isToggling) return;
     setState(() => _isToggling = true);
@@ -624,7 +731,11 @@ class _ProductCardState extends State<ProductCard> {
         ? double.tryParse(widget.product['average_rating'].toString())
         : null;
     int? displayReviews = widget.product['rating_count'];
-    String? imageUrl = widget.product['images']?[0]?['src'];
+    String? imageUrl;
+    final images = widget.product['images'];
+    if (images is List && images.isNotEmpty) {
+      imageUrl = images[0]?['src'];
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -661,7 +772,7 @@ class _ProductCardState extends State<ProductCard> {
                       imageUrl,
                       width: double.infinity,
                       height: 120,
-                      fit: BoxFit.cover,
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
                         return const Center(
                           child: Icon(Icons.image_not_supported),

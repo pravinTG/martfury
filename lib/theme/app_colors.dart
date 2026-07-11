@@ -4,15 +4,17 @@ class AppColors {
   AppColors._();
 
   // Core brand colors
-  static const Color yellow = Color(0xFFFFB74D);// Primary Cadbury-style purple
+  static const Color headerRed = Color(0xFF7a1e1e); // New dark red for headers
+  static const Color yellow = Color(0xFFF27D16); // Primary orange highlight
   static const Color primary = yellow;
-  static const Color accent = Color(0xFF6D33A6); // Secondary purple accent
-  static const Color purpleLight = Color(0xFFEDE3F8);
+  static const Color button = Color(0xFFF27D16); // Orange button color
+  static const Color accent = Color(0xFFF27D16); 
+  static const Color purpleLight = Color(0xFFFDE8D7); // Light peach for category circles
   static const Color purpleDark = Color(0xFF341356);
   static const Color orange = Color(0xffF14705);
   static const Color red = Color(0xffE1332D);
 
-  static const Color background = Color(0xFFF5F5F5);
+  static const Color background = Color(0xFFFFF7F0); // Creamy peach
   static const Color scaffoldBackground = Color(0xFFFFFFFF);
 
   static const Color textPrimary = Color(0xFF090909);

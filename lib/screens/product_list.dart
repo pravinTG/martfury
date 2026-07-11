@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../api_service.dart';
+import '../theme/app_text_styles.dart';
+import '../widgets/custom_cached_image.dart';
 import 'cart_screen.dart';
 import 'product_detail_screen.dart';
 import 'search_screen.dart';
@@ -122,9 +124,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
       if (!mounted) return;
       setState(() {
         if (removed) {
-          _favoriteProductIds.remove(productId);
+          ApiService.wishlistProductIds.remove(productId.toString());
         } else {
-          _favoriteProductIds.add(productId);
+          ApiService.wishlistProductIds.add(productId.toString());
         }
       });
       AppSnackBar.show(context, message, type: AppSnackType.success);
@@ -139,7 +141,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -340,6 +342,8 @@ class _ProductListScreenState extends State<ProductListScreen> {
         ? double.tryParse(product['average_rating'].toString()) ?? 0.0
         : 0.0;
     final reviewCount = product['rating_count'] ?? 0;
+    final productId = (product['id'] ?? '').toString();
+    final isFavorite = ApiService.wishlistProductIds.contains(productId);
 
     return Container(
       decoration: BoxDecoration(
@@ -362,20 +366,11 @@ class _ProductListScreenState extends State<ProductListScreen> {
                 if (imageUrl != null)
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                    child: Image.network(
-                      imageUrl,
+                    child: CustomCachedImage(
+                      imageUrl: imageUrl,
                       width: double.infinity,
                       height: 130,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Center(
-                          child: Icon(
-                            Icons.image_outlined,
-                            size: 50,
-                            color: Colors.grey[400],
-                          ),
-                        );
-                      },
                     ),
                   )
                 else
@@ -392,11 +387,11 @@ class _ProductListScreenState extends State<ProductListScreen> {
                   child: GestureDetector(
                     onTap: () => _toggleFavorite(product['id']),
                     child: Icon(
-                      _favoriteProductIds.contains(product['id'])
+                      isFavorite
                           ? Icons.favorite
                           : Icons.favorite_border,
                       size: 20,
-                      color: _favoriteProductIds.contains(product['id'])
+                      color: isFavorite
                           ? Colors.red
                           : Colors.black87,
                     ),

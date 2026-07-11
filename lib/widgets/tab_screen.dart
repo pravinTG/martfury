@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:martfury/theme/app_colors.dart';
+import 'package:martfury/widgets/coming_soon_popup.dart';
 
 class TabScreen extends StatelessWidget {
   final int selectedIndex;
@@ -17,7 +18,7 @@ class TabScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Color(0xffF6F6F6),
+        color: Colors.white,
         border: Border(
           top: BorderSide(
             color: Colors.grey[300]!,
@@ -42,15 +43,21 @@ class TabScreen extends StatelessWidget {
                 index: 1,
               ),
               _buildNavItem(
-                icon: Icons.favorite_border,
-                label: 'Wishlist',
-                index: 2,
-              ),
-              _buildNavItem(
                 icon: Icons.shopping_cart_outlined,
                 label: 'Cart',
-                index: 3,
+                index: 2,
                 badgeCount: cartCount,
+              ),
+              _buildNavItem(
+                icon: Icons.favorite_border,
+                label: 'Wishlist',
+                index: 3,
+              ),
+              _buildNavItem(
+                icon: Icons.local_offer_outlined,
+                label: 'Offers',
+                index: 4,
+                context: context,
               ),
             ],
           ),
@@ -64,11 +71,18 @@ class TabScreen extends StatelessWidget {
     required String label,
     required int index,
     int badgeCount = 0,
+    BuildContext? context,
   }) {
     final isSelected = selectedIndex == index;
 
     return GestureDetector(
-      onTap: () => onItemTapped(index),
+      onTap: () {
+        if (index == 4 && context != null) {
+          ComingSoonPopup.show(context);
+        } else {
+          onItemTapped(index);
+        }
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

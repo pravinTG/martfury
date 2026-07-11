@@ -15,7 +15,7 @@ class OrderDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         title: Text('Order #$orderId', style: const TextStyle(color: Colors.white)),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -30,22 +30,65 @@ class OrderDetailScreen extends StatelessWidget {
                 ? 'Failed to load order detail: ${snapshot.error}'
                 : null,
             onRetry: () {},
-            child: ListView(
-              padding: const EdgeInsets.all(16),
+            child: Column(
               children: [
-                _orderHeader(order),
-                const SizedBox(height: 16),
-                Text('Items', style: AppTextStyles.heading2),
-                const SizedBox(height: 8),
-                ...lineItems.map((item) {
-                  final row = item as Map<String, dynamic>;
-                  return _itemCard(row);
-                }),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      _orderHeader(order),
+                      const SizedBox(height: 16),
+                      Text('Items', style: AppTextStyles.heading2),
+                      const SizedBox(height: 8),
+                      ...lineItems.map((item) {
+                        final row = item as Map<String, dynamic>;
+                        return _itemCard(row);
+                      }),
+                    ],
+                  ),
+                ),
+                if (order['status'] != 'refunded' && order['status'] != 'cancelled' && order['status'] != 'failed')
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () => _showRefundBottomSheet(context, orderId),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.headerRed,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('Request Return', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
               ],
             ),
           );
         },
       ),
+    );
+  }
+
+  void _showRefundBottomSheet(BuildContext context, int orderId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: _RefundForm(orderId: orderId),
+        );
+      },
     );
   }
 
@@ -175,3 +218,191 @@ class OrderDetailScreen extends StatelessWidget {
     );
   }
 }
+
+class _RefundForm extends StatefulWidget {
+  final int orderId;
+  const _RefundForm({required this.orderId});
+
+  @override
+  State<_RefundForm> createState() => _RefundFormState();
+}
+
+class _RefundFormState extends State<_RefundForm> {
+  final _apiService = ApiService();
+  bool _isLoading = false;
+  String? _selectedReason;
+  final TextEditingController _customReasonController = TextEditingController();
+
+  final List<String> _reasons = [
+    'Received damaged product',
+    'Product missing from the package',
+    'Wrong product received',
+    'Product not as described',
+    'Other'
+  ];
+
+  Future<void> _submit() async {
+    print('👉 Submit clicked');
+    final reason = _selectedReason == 'Other' 
+        ? _customReasonController.text.trim() 
+        : _selectedReason;
+
+    print('👉 Selected reason: $_selectedReason');
+    print('👉 Custom reason: ${_customReasonController.text.trim()}');
+    print('👉 Final reason to submit: $reason');
+
+    if (reason == null || reason.isEmpty) {
+      print('⚠️ Reason is empty. Showing snackbar.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please provide a reason for refund')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    print('🔄 isLoading set to true. Calling API...');
+    
+    try {
+      final res = await _apiService.refundOrder(
+        orderId: widget.orderId,
+        reason: reason,
+      );
+      
+      print('✅ API success response: $res');
+      if (mounted) {
+        Navigator.pop(context); // Close bottom sheet
+        print('🎉 Showing success dialog');
+        _showSuccessDialog(res['message'] ?? 'Refund request submitted successfully');
+      }
+    } catch (e) {
+      print('❌ API error caught: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+        );
+      }
+    } finally {
+      if (mounted) {
+        print('⏹️ Setting isLoading to false');
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _showSuccessDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle, color: Colors.green, size: 64),
+              const SizedBox(height: 16),
+              const Text('Success!', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.headerRed,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                child: const Text('OK', style: TextStyle(color: Colors.white, fontSize: 16)),
+              )
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Request Return',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              )
+            ],
+          ),
+          const SizedBox(height: 16),
+          DropdownButtonFormField<String>(
+            decoration: InputDecoration(
+              labelText: 'Select Reason',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            ),
+            style: const TextStyle(color: Colors.black, fontSize: 16),
+            value: _selectedReason,
+            items: _reasons.map((r) => DropdownMenuItem(
+              value: r, 
+              child: Text(r, style: const TextStyle(color: Colors.black)),
+            )).toList(),
+            onChanged: (val) {
+              setState(() {
+                _selectedReason = val;
+              });
+            },
+          ),
+          if (_selectedReason == 'Other') ...[
+            const SizedBox(height: 16),
+            TextField(
+              controller: _customReasonController,
+              decoration: InputDecoration(
+                labelText: 'Enter your reason',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+              maxLines: 3,
+            ),
+          ],
+          const SizedBox(height: 24),
+          ElevatedButton(
+            onPressed: _isLoading ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.headerRed,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: _isLoading
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                : const Text('Submit Request', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _customReasonController.dispose();
+    super.dispose();
+  }
+}
+

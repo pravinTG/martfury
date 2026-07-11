@@ -10,6 +10,7 @@ class AsyncStateView extends StatelessWidget {
     this.onRetry,
     this.emptyMessage,
     this.isEmpty = false,
+    this.shimmerChild,
   });
 
   final bool isLoading;
@@ -18,10 +19,16 @@ class AsyncStateView extends StatelessWidget {
   final String? emptyMessage;
   final bool isEmpty;
   final Widget child;
+  final Widget? shimmerChild;
 
   @override
   Widget build(BuildContext context) {
-    if (isLoading) return const AppPageLoader();
+    if (isLoading) {
+      if (shimmerChild != null) {
+        return shimmerChild!;
+      }
+      return const AppPageLoader();
+    }
 
     if (errorMessage != null) {
       return Center(

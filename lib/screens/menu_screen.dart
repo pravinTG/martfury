@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:martfury/screens/about_us.dart';
+import 'package:martfury/screens/contact_us_screen.dart';
 import 'package:martfury/screens/address_selection_screen.dart';
 import 'package:martfury/screens/faq.dart';
 import 'package:martfury/screens/orders_screen.dart';
@@ -58,9 +59,9 @@ class _MenuScreenState extends State<MenuScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         automaticallyImplyLeading: false,
         toolbarHeight: 80,
@@ -122,47 +123,50 @@ class _MenuScreenState extends State<MenuScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  _userName,
-                  style: AppTextStyles.body1.copyWith(fontWeight: FontWeight.w600),
+                  _userName.toUpperCase(),
+                  style: AppTextStyles.body1.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
                 ),
                 const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(
-                        Icons.storefront,
-                        size: 14,
-                        color: Color(0xFFFDB825),
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'My Shop',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Container(
+                //   padding: const EdgeInsets.symmetric(
+                //     horizontal: 12,
+                //     vertical: 4,
+                //   ),
+                //   decoration: BoxDecoration(
+                //     color: Colors.white,
+                //     borderRadius: BorderRadius.circular(4),
+                //   ),
+                //   child: Row(
+                //     mainAxisSize: MainAxisSize.min,
+                //     children: const [
+                //       Icon(
+                //         Icons.storefront,
+                //         size: 14,
+                //         color: AppColors.yellow,
+                //       ),
+                //       SizedBox(width: 4),
+                //       Text(
+                //         'My Shop',
+                //         style: TextStyle(
+                //           fontSize: 12,
+                //           fontWeight: FontWeight.w500,
+                //         ),
+                //       ),
+                //     ],
+                //   ),
+                // ),
               ],
             ),
           ],
         ),
         actions: const [
-          Icon(Icons.chat_bubble_outline, color: Colors.white),
-          SizedBox(width: 16),
-          Icon(Icons.notifications_none, color: Colors.white),
-          SizedBox(width: 16),
+          // Icon(Icons.chat_bubble_outline, color: Colors.white),
+          // SizedBox(width: 16),
+          // Icon(Icons.notifications_none, color: Colors.white),
+          // SizedBox(width: 16),
         ],
       ),
       body: SingleChildScrollView(
@@ -171,56 +175,67 @@ class _MenuScreenState extends State<MenuScreen> {
           children: [
             const SizedBox(height: 24),
 
-            // My Orders Section
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'My Orders',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const OrdersScreen()),
-                      );
-                    },
-                    child: const Text(
-                      'View All',
-                      style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFFFDB825),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  ),
-                ],
-              ),
+            // // My Orders Section
+            // Padding(
+            //   padding: const EdgeInsets.symmetric(horizontal: 16),
+            //   child: Row(
+            //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            //     children: [
+            //       Text(
+            //         'My Orders',
+            //         style: TextStyle(
+            //           fontSize: 18,
+            //           fontWeight: FontWeight.bold,
+            //         ),
+            //       ),
+            //       GestureDetector(
+            //         onTap: () {
+            //           Navigator.push(
+            //             context,
+            //             MaterialPageRoute(builder: (_) => const OrdersScreen()),
+            //           );
+            //         },
+            //         child: const Text(
+            //           'View All',
+            //           style: TextStyle(
+            //           fontSize: 14,
+            //           color: AppColors.yellow,
+            //           fontWeight: FontWeight.w500,
+            //         ),
+            //       ),
+            //       ),
+            //     ],
+            //   ),
+            // ),
+            //
+            // const SizedBox(height: 16),
+            //
+            // // Order Status Icons
+            // Padding(
+            //   padding: const EdgeInsets.symmetric(horizontal: 16),
+            //   child: Row(
+            //     mainAxisAlignment: MainAxisAlignment.spaceAround,
+            //     children: [
+            //       _buildOrderStatus(Icons.shopping_bag_outlined, 'Ongoing'),
+            //       _buildOrderStatus(Icons.local_shipping_outlined, 'Completed'),
+            //       _buildOrderStatus(Icons.rate_review_outlined, 'Reviews'),
+            //       _buildOrderStatus(Icons.keyboard_return, 'Returns'),
+            //     ],
+            //   ),
+            // ),
+
+
+            _buildMenuItem(
+              icon: Icons.person,
+              title: 'My Profile',
+              color: AppColors.yellow,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+                );
+              },
             ),
-
-            const SizedBox(height: 16),
-
-            // Order Status Icons
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildOrderStatus(Icons.shopping_bag_outlined, 'Ongoing'),
-                  _buildOrderStatus(Icons.local_shipping_outlined, 'Completed'),
-                  _buildOrderStatus(Icons.rate_review_outlined, 'Reviews'),
-                  _buildOrderStatus(Icons.keyboard_return, 'Returns'),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 24),
 
             // Menu Items
             _buildMenuItem(
@@ -259,43 +274,51 @@ class _MenuScreenState extends State<MenuScreen> {
               },
 
             ),
+            // _buildMenuItem(
+            //   icon: Icons.local_offer_outlined,
+            //   title: 'My Coupons',
+            //   color: AppColors.yellow,
+            //   onTap: () {
+            //
+            //   },
+            // ),
+            // _buildMenuItem(
+            //   icon: Icons.history,
+            //   title: 'Recently Viewed',
+            //   color: AppColors.yellow,
+            //   onTap: () {
+            //
+            //   },
+            // ),
+
+            // const SizedBox(height: 24),
+            //
+            // // Support Section
+            // const Padding(
+            //   padding: EdgeInsets.symmetric(horizontal: 16),
+            //   child: Text(
+            //     'Support',
+            //     style: TextStyle(
+            //       fontSize: 18,
+            //       fontWeight: FontWeight.bold,
+            //     ),
+            //   ),
+            // ),
+            //
+            // const SizedBox(height: 8),
+
             _buildMenuItem(
-              icon: Icons.local_offer_outlined,
-              title: 'My Coupons',
+              icon: Icons.contact_mail_outlined,
+              title: 'Contact Us / Callback Request',
               color: AppColors.yellow,
               onTap: () {
-
+                Navigator.push(context, MaterialPageRoute(builder: (context) => const ContactUsScreen()));
               },
             ),
-            _buildMenuItem(
-              icon: Icons.history,
-              title: 'Recently Viewed',
-              color: AppColors.yellow,
-              onTap: () {
-
-              },
-            ),
-
-            const SizedBox(height: 24),
-
-            // Support Section
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Support',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
             _buildMenuItem(
               icon: Icons.help_outline,
               title: 'FAQ',
-              color: const Color(0xFFFDB825),
+              color: AppColors.yellow,
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => FaqScreen(),));
               },
@@ -303,7 +326,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _buildMenuItem(
               icon: Icons.headset_mic_outlined,
               title: 'Our Policy',
-              color: const Color(0xFFFDB825),
+              color: AppColors.yellow,
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => OurPolicy(),));
 
@@ -312,7 +335,7 @@ class _MenuScreenState extends State<MenuScreen> {
             _buildMenuItem(
               icon: Icons.article_outlined,
               title: 'Terms and Condition',
-              color: const Color(0xFFFDB825),
+              color: AppColors.yellow,
               onTap: () {
                 Navigator.push(context, MaterialPageRoute(builder: (context) => TermCondition(),));
               },
@@ -320,38 +343,36 @@ class _MenuScreenState extends State<MenuScreen> {
             _buildMenuItem(
               icon: Icons.article_outlined,
               title: "About Us",
-              color: const Color(0xFFFDB825),
+              color: AppColors.yellow,
               onTap: () {Navigator.push(context, MaterialPageRoute(builder: (context) => AboutUS(),));
               },
             ),
 
-            const SizedBox(height: 24),
 
             // Setting Section
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Setting',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
+            // const Padding(
+            //   padding: EdgeInsets.symmetric(horizontal: 16),
+            //   child: Text(
+            //     'Setting',
+            //     style: TextStyle(
+            //       fontSize: 18,
+            //       fontWeight: FontWeight.bold,
+            //     ),
+            //   ),
+            // ),
 
-            const SizedBox(height: 8),
 
-            _buildMenuItem(
-              icon: Icons.attach_money,
-              title: 'Currency',
-              color: const Color(0xFFFDB825),
-              onTap: () {
-
-              },
-            ),
-            _buildMenuItemWithFlag(
-              title: 'Language',
-            ),
+            // _buildMenuItem(
+            //   icon: Icons.attach_money,
+            //   title: 'Currency',
+            //   color: AppColors.yellow,
+            //   onTap: () {
+            //
+            //   },
+            // ),
+            // _buildMenuItemWithFlag(
+            //   title: 'Language',
+            // ),
             _buildMenuItem(
               icon: Icons.logout_outlined,
               title: 'Logout',
@@ -377,12 +398,12 @@ class _MenuScreenState extends State<MenuScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFFDB825).withOpacity(0.1),
+            color: AppColors.yellow.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
             icon,
-            color: const Color(0xFFFDB825),
+            color: AppColors.yellow,
             size: 24,
           ),
         ),

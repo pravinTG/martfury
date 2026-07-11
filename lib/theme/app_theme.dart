@@ -28,14 +28,14 @@ class AppTheme {
         labelLarge: AppTextStyles.button,
       ),
       appBarTheme: const AppBarTheme(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         foregroundColor: Colors.white,
         centerTitle: true,
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.yellow,
+          backgroundColor: AppColors.headerRed,
           foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.purpleLight,
           disabledForegroundColor: AppColors.textDisabled,
@@ -53,7 +53,7 @@ class AppTheme {
         ),
       ),
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         foregroundColor: Colors.white,
       ),
       bottomNavigationBarTheme: const BottomNavigationBarThemeData(

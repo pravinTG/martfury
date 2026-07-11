@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:martfury/screens/address_selection_screen.dart';
 import '../api_service.dart';
+import '../widgets/shimmer_loading.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 
@@ -36,11 +37,13 @@ class CartScreenState extends State<CartScreen> {
     });
     try {
       final data = await _apiService.getCart();
+      if (!mounted) return;
       setState(() {
         _cartData = data;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -70,6 +73,23 @@ class CartScreenState extends State<CartScreen> {
             content: Text('Failed to remove item: $e'),
             backgroundColor: Colors.red,
           ),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateQuantity(String productId, int newQuantity, String? variationId) async {
+    if (newQuantity < 1) return;
+    try {
+      setState(() => _isLoading = true);
+      await _apiService.updateCartItem(productId: productId, quantity: newQuantity, variationId: variationId);
+      await _loadCart();
+      widget.onCartChanged?.call();
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to update quantity: $e'), backgroundColor: Colors.red),
         );
       }
     }
@@ -122,7 +142,7 @@ class CartScreenState extends State<CartScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
         title: const Text(
           'My Cart',
@@ -133,11 +153,11 @@ class CartScreenState extends State<CartScreen> {
           ),
         ),
         actions: [
-          if (!_isLoading)
-            IconButton(
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              onPressed: _loadCart,
-            ),
+          // if (!_isLoading)
+          //   IconButton(
+          //     icon: const Icon(Icons.refresh, color: Colors.white),
+          //     onPressed: _loadCart,
+          //   ),
         ],
       ),
       body: _buildBody(),
@@ -147,8 +167,10 @@ class CartScreenState extends State<CartScreen> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.yellow),
+      return ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: 4,
+        itemBuilder: (context, index) => const ShimmerCartItem(),
       );
     }
 
@@ -185,7 +207,7 @@ class CartScreenState extends State<CartScreen> {
                   style: TextStyle(color: Colors.white),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.yellow,
+                  backgroundColor: AppColors.headerRed,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
                     vertical: 12,
@@ -359,20 +381,38 @@ class CartScreenState extends State<CartScreen> {
                   ),
                   const SizedBox(height: 6),
 
-                  // Quantity
-                  Row(
-                    children: [
-                      const Icon(Icons.shopping_bag_outlined,
-                          size: 14, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Qty: $quantity',
-                        style: AppTextStyles.body2.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
+                  // Quantity Adjuster
+                  Container(
+                    height: 32,
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32),
+                          icon: const Icon(Icons.remove, size: 16, color: AppColors.textPrimary),
+                          onPressed: () => _updateQuantity(productId, int.parse(quantity.toString()) - 1, item['variation_id']?.toString()),
                         ),
-                      ),
-                    ],
+                        Container(
+                          width: 32,
+                          alignment: Alignment.center,
+                          child: Text(
+                            '$quantity',
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                          ),
+                        ),
+                        IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 32),
+                          icon: const Icon(Icons.add, size: 16, color: AppColors.textPrimary),
+                          onPressed: () => _updateQuantity(productId, int.parse(quantity.toString()) + 1, item['variation_id']?.toString()),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 6),
 
@@ -414,14 +454,18 @@ class CartScreenState extends State<CartScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Subtotal: ₹${double.tryParse(subtotal.toString())?.toStringAsFixed(2) ?? subtotal}',
-                        style: AppTextStyles.body1.copyWith(
-                          color: AppColors.yellow,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+                      Expanded(
+                        child: Text(
+                          'Subtotal: ₹${double.tryParse(subtotal.toString())?.toStringAsFixed(2) ?? subtotal}',
+                          style: AppTextStyles.body1.copyWith(
+                            color: AppColors.yellow,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      const SizedBox(width: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -603,7 +647,7 @@ class CartScreenState extends State<CartScreen> {
                 );
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.yellow,
+                backgroundColor: AppColors.headerRed,
                 padding: const EdgeInsets.symmetric(vertical: 15),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),

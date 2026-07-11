@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:martfury/api_service.dart';
 import 'package:martfury/screens/order_summary_screen.dart';
 import 'package:martfury/theme/app_colors.dart';
@@ -22,8 +23,7 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
   int? _selectedAddressId;
 
   bool get _isCheckoutFlow {
-    final cartItems = widget.cartData['cart_items'];
-    return cartItems is List && cartItems.isNotEmpty;
+    return widget.cartData.isNotEmpty;
   }
 
   @override
@@ -33,12 +33,14 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
   }
 
   Future<void> _loadAddresses() async {
+    print('🔄 Loading addresses...');
     setState(() {
       _isLoading = true;
       _error = null;
     });
     try {
       final addresses = await _apiService.getAddressList();
+      print('✅ Addresses loaded in UI: ${addresses.length} found');
       setState(() {
         _addresses = addresses;
         _selectedAddressId = addresses.isNotEmpty
@@ -47,6 +49,7 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ Error loading addresses in UI: $e');
       setState(() {
         _error = e.toString();
         _isLoading = false;
@@ -66,6 +69,7 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
     );
     if (result == null) return;
 
+    print('📝 Saving address data: $result');
     setState(() => _isSaving = true);
     try {
       if (initial == null) {
@@ -82,8 +86,10 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
           backgroundColor: Colors.green,
         ),
       );
+      print('🔄 Refreshing addresses after save...');
       await _loadAddresses();
     } catch (e) {
+      print('❌ Address save failed in UI: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Address save failed: $e'), backgroundColor: Colors.red),
@@ -128,7 +134,7 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Select Address', style: TextStyle(color: Colors.white)),
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: _buildBody(),
@@ -280,7 +286,7 @@ class _AddressSelectionScreenState extends State<AddressSelectionScreen> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _isSaving ? null : _goToSummary,
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.yellow),
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.headerRed),
                       child: _isSaving
                           ? const SizedBox(
                               width: 18,
@@ -428,17 +434,51 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
               _field(_firstName, 'First name'),
               _field(_lastName, 'Last name'),
               _field(_email, 'Email'),
-              _field(_phone, 'Phone'),
+              _field(
+                _phone,
+                'Phone',
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter Phone';
+                  }
+                  if (value.trim().length != 10) {
+                    return 'Phone number must be exactly 10 digits';
+                  }
+                  return null;
+                },
+              ),
               _field(_address1, 'Address line 1'),
               _field(_address2, 'Address line 2', required: false),
               _field(_city, 'City'),
               _field(_state, 'State'),
-              _field(_postcode, 'Pincode'),
+              _field(
+                _postcode,
+                'Pincode',
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(6),
+                ],
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter Pincode';
+                  }
+                  if (value.trim().length != 6) {
+                    return 'Pincode must be exactly 6 digits';
+                  }
+                  return null;
+                },
+              ),
               DropdownButtonFormField<String>(
                 value: _addressType,
                 items: const [
-                  DropdownMenuItem(value: 'home', child: Text('Home')),
-                  DropdownMenuItem(value: 'office', child: Text('Office')),
+                  DropdownMenuItem(value: 'home', child: Text('Home',style: TextStyle(color: Colors.black),)),
+                  DropdownMenuItem(value: 'office', child: Text('Office',style: TextStyle(color: Colors.black),)),
                 ],
                 onChanged: (value) => setState(() => _addressType = value ?? 'home'),
                 decoration: const InputDecoration(labelText: 'Address Type'),
@@ -463,7 +503,7 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
                       'address_type': _addressType,
                     });
                   },
-                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.yellow),
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.headerRed),
                   child: const Text('Save', style: TextStyle(color: Colors.white)),
                 ),
               ),
@@ -475,20 +515,26 @@ class _AddressFormSheetState extends State<AddressFormSheet> {
   }
 
   Widget _field(
-    TextEditingController controller,
-    String label, {
-    bool required = true,
-  }) {
+      TextEditingController controller,
+      String label, {
+        bool required = true,
+        String? Function(String?)? validator,
+        TextInputType? keyboardType,
+        List<TextInputFormatter>? inputFormatters,
+      }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextFormField(
         controller: controller,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
         decoration: InputDecoration(labelText: label),
-        validator: required
-            ? (value) => (value == null || value.trim().isEmpty)
+        validator: validator ??
+            (required
+                ? (value) => (value == null || value.trim().isEmpty)
                 ? 'Please enter $label'
                 : null
-            : null,
+                : null),
       ),
     );
   }

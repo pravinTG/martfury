@@ -50,17 +50,21 @@ class _OurPolicyState extends State<OurPolicy> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.yellow,
+        backgroundColor: AppColors.headerRed,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: const Text(
           "Our Policy",
           style: TextStyle(
-            color: AppColors.textPrimary,
+            color: Colors.white,
             fontSize: 18,
             fontWeight: FontWeight.w600,
           ),
         ),
+        centerTitle: true,
       ),
 
       // ------- BODY DIRECTLY HERE -------
