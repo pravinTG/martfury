@@ -1390,7 +1390,7 @@
   
     Widget _buildBottomBar() {
       return Container(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewPadding.bottom + 40),
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [

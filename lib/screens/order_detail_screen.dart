@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:martfury/api_service.dart';
 import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/theme/app_text_styles.dart';
@@ -49,7 +51,7 @@ class OrderDetailScreen extends StatelessWidget {
                 ),
                 if (order['status'] != 'refunded' && order['status'] != 'cancelled' && order['status'] != 'failed')
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewPadding.bottom + 80),
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -240,6 +242,26 @@ class _RefundFormState extends State<_RefundForm> {
     'Product not as described',
     'Other'
   ];
+  
+  final ImagePicker _picker = ImagePicker();
+  List<XFile> _selectedImages = [];
+
+  Future<void> _pickImages() async {
+    try {
+      final List<XFile> images = await _picker.pickMultiImage();
+      if (images.isNotEmpty) {
+        setState(() {
+          _selectedImages.addAll(images);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error picking images: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _submit() async {
     print('👉 Submit clicked');
@@ -266,6 +288,7 @@ class _RefundFormState extends State<_RefundForm> {
       final res = await _apiService.refundOrder(
         orderId: widget.orderId,
         reason: reason,
+        imagePaths: _selectedImages.map((e) => e.path).toList(),
       );
       
       print('✅ API success response: $res');
@@ -374,6 +397,64 @@ class _RefundFormState extends State<_RefundForm> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
               maxLines: 3,
+            ),
+          ],
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _pickImages,
+                icon: const Icon(Icons.add_photo_alternate, color: AppColors.headerRed),
+                label: const Text('Add Images', style: TextStyle(color: AppColors.headerRed)),
+              ),
+              const SizedBox(width: 12),
+              Text('${_selectedImages.length} images selected', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          if (_selectedImages.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 80,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _selectedImages.length,
+                itemBuilder: (context, index) {
+                  return Stack(
+                    children: [
+                      Container(
+                        margin: const EdgeInsets.only(right: 8, top: 8),
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          image: DecorationImage(
+                            image: FileImage(File(_selectedImages[index].path)),
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedImages.removeAt(index);
+                            });
+                          },
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.cancel, color: Colors.red, size: 20),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ],
           const SizedBox(height: 24),

@@ -104,7 +104,20 @@ class _FaqScreenState extends State<FaqScreen> {
             Html(
               data: _contentHtml,
               style: {
-                "*": Style.fromTextStyle(AppTextStyles.heading2),
+                "body": Style(
+                  fontSize: FontSize(15.0),
+                  color: Colors.black87,
+                  lineHeight: LineHeight(1.6),
+                ),
+                "h1": Style(fontWeight: FontWeight.bold, fontSize: FontSize(22.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "h2": Style(fontWeight: FontWeight.bold, fontSize: FontSize(20.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "h3": Style(fontWeight: FontWeight.bold, fontSize: FontSize(18.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "h4": Style(fontWeight: FontWeight.bold, fontSize: FontSize(16.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "h5": Style(fontWeight: FontWeight.bold, fontSize: FontSize(15.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "h6": Style(fontWeight: FontWeight.bold, fontSize: FontSize(14.0), color: AppColors.headerRed, margin: Margins.only(top: 16, bottom: 8)),
+                "strong": Style(fontWeight: FontWeight.bold, color: Colors.black, fontSize: FontSize(16.0)),
+                "p": Style(fontSize: FontSize(15.0), color: Colors.black87, margin: Margins.only(bottom: 12)),
+                "li": Style(fontSize: FontSize(15.0), color: Colors.black87, margin: Margins.only(bottom: 6)),
               },
             )
           ],

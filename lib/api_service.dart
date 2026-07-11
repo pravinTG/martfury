@@ -831,6 +831,7 @@ class ApiService {
   Future<Map<String, dynamic>> refundOrder({
     required int orderId,
     required String reason,
+    List<String>? imagePaths,
   }) async {
     try {
       final userId = await TokenStorageService.getUserId();
@@ -840,20 +841,27 @@ class ApiService {
       final url = Uri.parse('$walletBaseUrl/refund-order?_t=$timestamp');
       print('💸 Refund Order: POST $url');
 
-      final body = {
-        'user_id': int.tryParse(userId.toString()) ?? 0,
-        'order_id': orderId,
-        'reason': reason,
-      };
-
-      print('📤 Request Body: ${json.encode(body)}');
-
+      final request = http.MultipartRequest('POST', url);
+      
       final headers = await _getAuthHeaders();
-      final response = await http.post(
-        url,
-        headers: headers,
-        body: json.encode(body),
-      );
+      request.headers.addAll(headers);
+      request.headers['Accept'] = 'application/json';
+
+      request.fields['user_id'] = userId.toString();
+      request.fields['order_id'] = orderId.toString();
+      request.fields['reason'] = reason;
+
+      if (imagePaths != null && imagePaths.isNotEmpty) {
+        for (String path in imagePaths) {
+          request.files.add(await http.MultipartFile.fromPath('images[]', path));
+        }
+      }
+
+      print('📤 Request Fields: ${request.fields}');
+      print('📸 Images count: ${imagePaths?.length ?? 0}');
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
 
       print('📡 Response Status: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');

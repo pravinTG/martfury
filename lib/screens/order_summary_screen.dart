@@ -525,7 +525,7 @@ class _OrderSummaryScreenState extends State<OrderSummaryScreen> {
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          padding: EdgeInsets.fromLTRB(16, 8, 16, MediaQuery.of(context).viewPadding.bottom + 40),
           child: ElevatedButton(
             onPressed: _isPlacingOrder ? null : _placeOrder,
             style: ElevatedButton.styleFrom(

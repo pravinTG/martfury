@@ -63,7 +63,11 @@ class _MenuScreenState extends State<MenuScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.headerRed,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        // automaticallyImplyLeading: false,
+        // leading: IconButton(
+        //   icon: const Icon(Icons.close, color: Colors.white),
+        //   onPressed: () => Navigator.pop(context),
+        // ),
         toolbarHeight: 80,
         title: Row(
           children: [
@@ -162,7 +166,11 @@ class _MenuScreenState extends State<MenuScreen> {
             ),
           ],
         ),
-        actions: const [
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          ),
           // Icon(Icons.chat_bubble_outline, color: Colors.white),
           // SizedBox(width: 16),
           // Icon(Icons.notifications_none, color: Colors.white),

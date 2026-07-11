@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -60,6 +61,8 @@ class _HomeScreenState extends State<HomeScreen> {
     'bag': 'https://images.unsplash.com/photo-1584916201218-f4242ceb4809?w=400&q=80',
   };
 
+  Timer? _walletPollingTimer;
+
   void _openSearch() {
     Navigator.push(
       context,
@@ -102,10 +105,16 @@ class _HomeScreenState extends State<HomeScreen> {
     _scrollController.addListener(_onScroll);
     _fetchData();
     _loadWalletBalance();
+    
+    // Poll wallet status every 30 seconds to show the blinking dot without restarting
+    _walletPollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _loadWalletBalance();
+    });
   }
 
   @override
   void dispose() {
+    _walletPollingTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
   }

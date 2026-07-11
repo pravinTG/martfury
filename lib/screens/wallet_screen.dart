@@ -309,21 +309,20 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
 
   Widget _buildContent() {
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).viewPadding.bottom + 120),
       children: [
         _balanceCard(),
         const SizedBox(height: 12),
         _quickActions(),
         const SizedBox(height: 12),
         _withdrawCard(),
-        const SizedBox(height: 16),
         Text(
           'Transaction history',
-          style: AppTextStyles.heading2,
+          style: AppTextStyles.heading3,
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 16),
         _transactionHistoryList(),
-        const SizedBox(height: 24),
+        const SizedBox(height: 80),
       ],
     );
   }
