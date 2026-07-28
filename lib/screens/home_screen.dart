@@ -18,6 +18,7 @@ import 'product_detail_screen.dart'; // ADD THIS LINE
 import 'search_screen.dart';
 import 'wallet_screen.dart';
 import 'shopping_selection_screen.dart';
+import 'category_screen.dart';
 import '../widgets/async_state_view.dart';
 import '../widgets/app_loader.dart';
 import '../widgets/app_snackbar.dart';
@@ -47,8 +48,18 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isWalletLoading = false;
   bool _hasWalletNotification = false;
 
-  int _currentBannerIndex = 0;
-  List<Map<String, dynamic>> _bannerImages = [];
+  List<Map<String, dynamic>> _allBanners = [];
+  final Map<String, int> _bannerIndexByPosition = {
+    'top': 0,
+    'middle': 0,
+    'bottom': 0,
+  };
+
+  List<Map<String, dynamic>> _bannersFor(String position) {
+    return _allBanners
+        .where((b) => (b['position']?.toString().toLowerCase() ?? '') == position)
+        .toList();
+  }
 
   final Map<String, String> _fallbackCategoryImages = {
     'clothing': 'https://images.unsplash.com/photo-1512436991641-6745cdb1723f?w=400&q=80',
@@ -141,7 +152,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Failed to load data: $e';
+        _errorMessage = 'Failed to load data';
         _isLoading = false;
       });
       print('Error fetching data: $e');
@@ -154,7 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (banners.isNotEmpty) {
         if (!mounted) return;
         setState(() {
-          _bannerImages = banners;
+          _allBanners = banners;
         });
       }
     } catch (e) {
@@ -465,11 +476,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildQuickActionRow(),
                       _buildHomeSearchBar(),
                       _buildTopCategories(),
-                      _buildTopBanners(),
+                      _buildBannerSection('top'),          // <-- top banner (was _buildTopBanners())
                       _buildWinterBigSale(),
-                      _buildMostTrending(),
+                        // _buildMostTrending(),
+                      _buildBannerSection('middle'),       // <-- middle banner, inserted here
+
                       _buildFlashSale(),
                       ..._buildDynamicCategorySections(),
+                      _buildBannerSection('bottom'),       // <-- bottom banner, before the end padding
+                      if (_isLoadingMoreProducts)
+                        const SizedBox(height: 80),
                       // _buildRecentlyViewed(),
                       if (_isLoadingMoreProducts)
                         Padding(
@@ -718,8 +734,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildTopBanners() {
-    if (_bannerImages.isEmpty) return const SizedBox.shrink();
+  Widget _buildBannerSection(String position, {double height = 180}) {
+    final banners = _bannersFor(position);
+    if (banners.isEmpty) return const SizedBox.shrink();
+
+    final currentIndex = _bannerIndexByPosition[position] ?? 0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -727,65 +746,36 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           CarouselSlider(
             options: CarouselOptions(
-              height: 180,
+              height: height,
               viewportFraction: 1.0,
-              autoPlay: true,
+              autoPlay: banners.length > 1,
               autoPlayInterval: const Duration(seconds: 4),
               onPageChanged: (index, reason) {
                 setState(() {
-                  _currentBannerIndex = index;
+                  _bannerIndexByPosition[position] = index;
                 });
               },
             ),
-            items: _bannerImages.map((banner) {
+            items: banners.map((banner) {
               return Builder(
                 builder: (BuildContext context) {
-                  final imageUrl = banner['image']?.toString() ?? banner['src']?.toString() ?? banner['url']?.toString() ?? '';
-                  final title = banner['title']?.toString();
-                  final subtitle = banner['subtitle']?.toString();
+                  final imageUrl = banner['image']?.toString() ?? '';
+                  final productId = banner['product_id'];
+                  final productUrl = banner['product_url']?.toString();
 
-                  return Container(
-                    width: MediaQuery.of(context).size.width,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      image: imageUrl.isNotEmpty
-                          ? DecorationImage(
-                              image: CachedNetworkImageProvider(imageUrl),
-                              fit: BoxFit.cover,
-                              colorFilter: (title != null || subtitle != null)
-                                  ? ColorFilter.mode(Colors.black.withOpacity(0.35), BlendMode.darken)
-                                  : null,
-                            )
-                          : null,
-                      color: AppColors.purpleLight,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          if (title != null && title.isNotEmpty)
-                            Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          if (subtitle != null && subtitle.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              subtitle,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ],
+                  return GestureDetector(
+                    onTap: () => _onBannerTap(productId, productUrl),
+                    child: Container(
+                      width: MediaQuery.of(context).size.width,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        image: imageUrl.isNotEmpty
+                            ? DecorationImage(
+                          image: CachedNetworkImageProvider(imageUrl),
+                          fit: BoxFit.cover,
+                        )
+                            : null,
+                        color: AppColors.purpleLight,
                       ),
                     ),
                   );
@@ -793,26 +783,46 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: _bannerImages.asMap().entries.map((entry) {
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: _currentBannerIndex == entry.key ? 20 : 7,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: _currentBannerIndex == entry.key
-                      ? AppColors.yellow
-                      : AppColors.textDisabled,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              );
-            }).toList(),
-          ),
+          if (banners.length > 1) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: banners.asMap().entries.map((entry) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: currentIndex == entry.key ? 20 : 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: currentIndex == entry.key
+                        ? AppColors.yellow
+                        : AppColors.textDisabled,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  void _onBannerTap(dynamic productId, String? productUrl) {
+    final id = productId is int
+        ? productId
+        : int.tryParse(productId?.toString() ?? '');
+    if (id != null) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProductDetailScreen(productId: id),
+        ),
+      );
+      return;
+    }
+    if (productUrl != null && productUrl.isNotEmpty) {
+      launchUrl(Uri.parse(productUrl), mode: LaunchMode.externalApplication);
+    }
   }
 
   List<Widget> _buildDynamicCategorySections() {
@@ -940,9 +950,9 @@ class _HomeScreenState extends State<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Winter Big Sale!',
+            'Buy & make payment from GW wallet',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 14,
               color: AppColors.textPrimary,
             ),
           ),
@@ -951,7 +961,7 @@ class _HomeScreenState extends State<HomeScreen> {
             text: const TextSpan(
               children: [
                 TextSpan(
-                  text: 'Up to ',
+                  text: 'Get big ',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
@@ -959,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 TextSpan(
-                  text: '70% OFF',
+                  text: 'cashback',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.w600,
@@ -969,18 +979,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 4),
-          const Text(
-            'ArmChair Brands',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: AppColors.textPrimary,
-            ),
-          ),
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: _openSearch,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const CategoryScreen(),
+                ),
+              );
+            },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.headerRed,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -1002,115 +1010,115 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildMostTrending() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: Container(
-              height: 170,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: AppColors.card,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Most Trending',
-                    style: AppTextStyles.body1,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Accessories',
-                    style: AppTextStyles.body1.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        width: 55,
-                        height: 55,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.yellow,
-                        ),
-                      ),
-                      Container(
-                        width: 45,
-                        height: 45,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.orange,
-                        ),
-                        child: const Center(
-                          child: Text(
-                            '70%\nOFF',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Container(
-              height: 170,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: AppColors.card,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'iPhone 14 Pro',
-                    style: AppTextStyles.body1,
-                  ),
-                  const SizedBox(height: 4),
-                  RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'Discount ',
-                          style: AppTextStyles.body1.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '20% OFF',
-                          style: AppTextStyles.body1.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.orange,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Spacer(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildMostTrending() {
+  //   return Padding(
+  //     padding: const EdgeInsets.symmetric(horizontal: 16),
+  //     child: Row(
+  //       children: [
+  //         Expanded(
+  //           child: Container(
+  //             height: 170,
+  //             padding: const EdgeInsets.all(20),
+  //             decoration: BoxDecoration(
+  //               borderRadius: BorderRadius.circular(12),
+  //               color: AppColors.card,
+  //             ),
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Text(
+  //                   'Most Trending',
+  //                   style: AppTextStyles.body1,
+  //                 ),
+  //                 const SizedBox(height: 4),
+  //                 Text(
+  //                   'Accessories',
+  //                   style: AppTextStyles.body1.copyWith(
+  //                     fontWeight: FontWeight.w600,
+  //                   ),
+  //                 ),
+  //                 const Spacer(),
+  //                 Stack(
+  //                   alignment: Alignment.center,
+  //                   children: [
+  //                     Container(
+  //                       width: 55,
+  //                       height: 55,
+  //                       decoration: const BoxDecoration(
+  //                         shape: BoxShape.circle,
+  //                         color: AppColors.yellow,
+  //                       ),
+  //                     ),
+  //                     Container(
+  //                       width: 45,
+  //                       height: 45,
+  //                       decoration: const BoxDecoration(
+  //                         shape: BoxShape.circle,
+  //                         color: AppColors.orange,
+  //                       ),
+  //                       child: const Center(
+  //                         child: Text(
+  //                           '70%\nOFF',
+  //                           textAlign: TextAlign.center,
+  //                           style: TextStyle(
+  //                             color: Colors.white,
+  //                             fontWeight: FontWeight.bold,
+  //                             fontSize: 12,
+  //                           ),
+  //                         ),
+  //                       ),
+  //                     ),
+  //                   ],
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //         const SizedBox(width: 12),
+  //         Expanded(
+  //           child: Container(
+  //             height: 170,
+  //             padding: const EdgeInsets.all(20),
+  //             decoration: BoxDecoration(
+  //               borderRadius: BorderRadius.circular(12),
+  //               color: AppColors.card,
+  //             ),
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Text(
+  //                   'iPhone 14 Pro',
+  //                   style: AppTextStyles.body1,
+  //                 ),
+  //                 const SizedBox(height: 4),
+  //                 RichText(
+  //                   text: TextSpan(
+  //                     children: [
+  //                       TextSpan(
+  //                         text: 'Discount ',
+  //                         style: AppTextStyles.body1.copyWith(
+  //                           fontWeight: FontWeight.w600,
+  //                         ),
+  //                       ),
+  //                       TextSpan(
+  //                         text: '20% OFF',
+  //                         style: AppTextStyles.body1.copyWith(
+  //                           fontWeight: FontWeight.w600,
+  //                           color: AppColors.orange,
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 ),
+  //                 const Spacer(),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   Widget _buildFlashSale() {
     final flashSaleProducts = _getFlashSaleProducts();

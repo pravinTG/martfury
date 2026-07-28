@@ -738,19 +738,30 @@ class ApiService {
     double deliveryCharge = 0,
   }) async {
     try {
+      final userIdStr = await TokenStorageService.getUserId();
+      final userId = userIdStr != null ? int.tryParse(userIdStr) : null;
+
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final url = Uri.parse('$baseUrl/checkout?_t=$timestamp');
+      final url = Uri.parse('https://goodiesworld.in/wp-json/tgw/v1/mobile-checkout?_t=$timestamp');
       final headers = await _getAuthHeaders();
+
+      final mappedProducts = lineItems.map((p) => {
+        'product_id': p['product_id'],
+        'quantity': p['quantity'],
+        if (p.containsKey('variation_id')) 'variation_id': p['variation_id'],
+      }).toList();
+
       final body = <String, dynamic>{
+        if (userId != null) 'user_id': userId,
+        'payment_method': paymentMethod,
         'billing': billing,
         'shipping': shipping,
-        'line_items': lineItems,
+        'products': mappedProducts,
         if (couponCode != null && couponCode.isNotEmpty) 'coupon_code': couponCode,
         if (deliveryDate != null && deliveryDate.isNotEmpty)
           'delivery_date': deliveryDate,
         if (customerNote != null && customerNote.isNotEmpty)
           'customer_note': customerNote,
-        'payment_method': paymentMethod,
         if (paymentId != null && paymentId.isNotEmpty) 'payment_id': paymentId,
         'delivery_charge': deliveryCharge,
       };
@@ -941,15 +952,25 @@ class ApiService {
     List<dynamic>? metaData,
   }) async {
     try {
+      final userIdStr = await TokenStorageService.getUserId();
+      final userId = userIdStr != null ? int.tryParse(userIdStr) : null;
+
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       final url = Uri.parse('$baseUrl/checkout?_t=$timestamp');
       print('🛍️ Create Order API Call: POST $url');
 
+      final mappedProducts = lineItems.map((p) => {
+        'product_id': p['product_id'],
+        'quantity': p['quantity'],
+        if (p.containsKey('variation_id')) 'variation_id': p['variation_id'],
+      }).toList();
+
       final body = {
+        if (userId != null) 'user_id': userId,
+        'payment_method': paymentMethod,
         'billing': billing,
         'shipping': shipping,
-        'line_items': lineItems,
-        'payment_method': paymentMethod,
+        'products': mappedProducts,
         'payment_method_title': paymentMethodTitle,
         'set_paid': setPaid,
         if (transactionId != null) ...{
@@ -1135,6 +1156,7 @@ class ApiService {
     final url = Uri.parse('$walletBaseUrl/usable-balance/$userId?_t=$timestamp');
     final headers = await _getAuthHeaders();
     final response = await http.get(url, headers: headers);
+    print('Usable Balance Response: ${response.body}');
     if (response.statusCode == 200) {
       final data = _decodeJson(response.body) as Map<String, dynamic>;
       return double.tryParse((data['usable_balance'] ?? '0').toString()) ?? 0;
@@ -1154,9 +1176,30 @@ class ApiService {
     throw Exception('Unable to load locked balance.');
   }
 
+  Future<Map<String, double>> getWalletData(int userId) async {
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/usable-balance/$userId?_t=$timestamp');
+    print('💸 Get Wallet Data: GET $url');
+    final headers = await _getAuthHeaders();
+    final response = await http.get(url, headers: headers);
+    
+    print('📡 Wallet Data Status: ${response.statusCode}');
+    print('📦 Wallet Data Response: ${response.body}');
+    
+    if (response.statusCode == 200) {
+      final data = _decodeJson(response.body) as Map<String, dynamic>;
+      return {
+        'main_wallet': double.tryParse((data['wallet_balance'] ?? '0').toString()) ?? 0,
+        'usable_wallet': double.tryParse((data['usable_balance'] ?? '0').toString()) ?? 0,
+        'bonus_wallet': double.tryParse((data['bonus_wallet'] ?? '0').toString()) ?? 0,
+      };
+    }
+    throw Exception('Unable to load wallet data.');
+  }
+
   Future<List<Map<String, dynamic>>> getWalletTransactions(int userId, {int page = 1, int limit = 20}) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/transactions/$userId?page=$page&limit=$limit&_t=$timestamp');
+    final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/transactions/$userId?_t=$timestamp');
     print('💸 Get Wallet Transactions: GET $url');
     final headers = await _getAuthHeaders();
     try {
@@ -1202,8 +1245,12 @@ class ApiService {
   }
 
   Future<bool> checkWalletNotification(int userId) async {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final url = Uri.parse('$walletBaseUrl/check-wallet-notification?user_id=$userId&_t=$timestamp');
+    final url = Uri.parse("$walletBaseUrl/check-wallet-notification").replace(
+      queryParameters: {
+        "user_id": userId.toString(),
+        "_t": DateTime.now().millisecondsSinceEpoch.toString(),
+      },
+    );
     try {
       final headers = await _getAuthHeaders();
       final response = await http.get(url, headers: headers);
@@ -1214,7 +1261,8 @@ class ApiService {
       if (response.statusCode == 200) {
         final data = _decodeJson(response.body);
         if (data is Map<String, dynamic>) {
-          return data['show_red_dot'] == true;
+          // Check various possible boolean flags for the notification dot (excluding 'status' which usually means API success)
+          return data['show_red_dot'] == true || data['show_green_dot'] == true || data['unread'] == true;
         }
       }
       return false;
@@ -1226,7 +1274,7 @@ class ApiService {
 
   Future<void> markWalletNotificationRead(int userId) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final url = Uri.parse('$walletBaseUrl/mark-wallet-notification-read?_t=$timestamp');
+    final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/mark-wallet-notification-read?_t=$timestamp');
     try {
       final headers = await _getAuthHeaders();
       final response = await http.post(
@@ -1316,22 +1364,49 @@ class ApiService {
       if (data is Map<String, dynamic>) {
         throw Exception((data['message'] ?? 'Failed to add balance').toString());
       }
-    } catch (_) {}
-    throw Exception('Failed to add balance.');
+    } catch (e) {
+      if (e is Exception) rethrow;
+    }
+    throw Exception('Failed to add balance. Server returned ${response.statusCode}');
   }
 
   Future<Map<String, dynamic>> payFromWallet({
     required int userId,
-    required dynamic orderId,
+    required Map<String, dynamic> billing,
+    required List<Map<String, dynamic>> products,
   }) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final url = Uri.parse('$walletBaseUrl/pay-from-wallet?_t=$timestamp');
+    final url = Uri.parse('https://goodiesworld.in/wp-json/tgw/v1/mobile-checkout?_t=$timestamp');
     final headers = await _getAuthHeaders();
+    // Headers already have 'Content-Type': 'application/json' from _getAuthHeaders
+    
+    // Map products to match the new API structure, if they aren't already.
+    final mappedProducts = products.map((p) => {
+      'product_id': p['product_id'],
+      'quantity': p['quantity'],
+      // Keep variation_id if present
+      if (p.containsKey('variation_id')) 'variation_id': p['variation_id'],
+    }).toList();
+    
+    final payload = {
+      'user_id': userId,
+      'payment_method': 'wallet',
+      'billing': billing,
+      'products': mappedProducts,
+    };
+    
+    print('💸 Pay from Wallet: POST $url');
+    print('📤 Request Body: ${json.encode(payload)}');
+    
     final response = await http.post(
       url,
       headers: headers,
-      body: json.encode({'user_id': userId, 'order_id': orderId}),
+      body: json.encode(payload),
     );
+    
+    print('📡 Response Status: ${response.statusCode}');
+    print('📦 Response Body: ${response.body}');
+    
     if (response.statusCode == 200 || response.statusCode == 201) {
       final data = _decodeJson(response.body);
       final parsed = data is Map<String, dynamic> ? data : {'data': data};
@@ -1346,7 +1421,9 @@ class ApiService {
       if (data is Map<String, dynamic>) {
         throw Exception((data['message'] ?? 'Wallet payment failed').toString());
       }
-    } catch (_) {}
+    } catch (e) {
+      if (e is Exception) rethrow;
+    }
     throw Exception('Wallet payment failed. Server returned ${response.statusCode}');
   }
 

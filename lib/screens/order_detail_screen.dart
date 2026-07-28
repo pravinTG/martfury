@@ -5,6 +5,7 @@ import 'package:martfury/api_service.dart';
 import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/theme/app_text_styles.dart';
 import 'package:martfury/widgets/async_state_view.dart';
+import 'package:martfury/utils/date_utils.dart';
 
 class OrderDetailScreen extends StatelessWidget {
   const OrderDetailScreen({super.key, required this.orderId});
@@ -106,7 +107,7 @@ class OrderDetailScreen extends StatelessWidget {
           _detailTile('Status', '${order['status'] ?? '-'}'),
           _detailTile('Total', '₹${order['total'] ?? '-'}', highlight: true),
           _detailTile('Payment', '${order['payment_method_title'] ?? '-'}'),
-          _detailTile('Date', '${order['date_created'] ?? '-'}'),
+          _detailTile('Date', DateUtilsHelper.formatToIST((order['date_created'] ?? '').toString())),
         ],
       ),
     );

@@ -207,31 +207,20 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
       _userId = uid;
 
       final results = await Future.wait([
-        _apiService.getWalletBalance(uid),
-        _apiService.getUsableBalance(uid),
-        _apiService.getLockedBalance(uid),
+        _apiService.getWalletData(uid),
         _apiService.getWalletTransactions(uid),
-        _apiService.getWithdrawRequests(uid),
       ]);
 
       setState(() {
-        _walletBalance = results[0] as double;
-        _usableBalance = results[1] as double;
-        _lockedBalance = results[2] as double;
+        final walletData = results[0] as Map<String, double>;
+        _walletBalance = walletData['main_wallet'] ?? 0;
+        _usableBalance = walletData['usable_wallet'] ?? 0;
+        _lockedBalance = walletData['bonus_wallet'] ?? 0;
         
-        final transactions = (results[3] as List).cast<Map<String, dynamic>>();
-        final withdraws = (results[4] as List).cast<Map<String, dynamic>>();
+        final transactions = (results[1] as List).cast<Map<String, dynamic>>();
         
-        // Map withdraws to transaction format so they render correctly in the history
-        final withdrawTransactions = withdraws.map((w) => {
-          'amount': w['amount'],
-          'type': 'debit', // Withdraw is always a debit
-          'transaction_type': 'Withdraw Request (${(w['status'] ?? 'pending').toString().toUpperCase()})',
-          'date': w['created_at'] ?? w['date'] ?? '',
-        }).toList();
-
         // Combine both lists and sort by date descending
-        _transactions = [...withdrawTransactions, ...transactions];
+        _transactions = [...transactions];
         _transactions.sort((a, b) {
           final dateA = DateTime.tryParse((a['date'] ?? '').toString()) ?? DateTime(2000);
           final dateB = DateTime.tryParse((b['date'] ?? '').toString()) ?? DateTime(2000);
@@ -367,7 +356,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           ),
           const SizedBox(height: 12),
           Text(
-            '₹${_walletBalance.toStringAsFixed(2)}',
+            '₹${_usableBalance.toStringAsFixed(2)}',
             style: AppTextStyles.heading1.copyWith(
               color: Colors.white,
               fontSize: 36,
@@ -377,10 +366,6 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           const SizedBox(height: 24),
           Row(
             children: [
-              Expanded(
-                child: _miniStat('Usable', _usableBalance),
-              ),
-              const SizedBox(width: 12),
               Expanded(
                 child: _miniStat(
                   'Bonus',
@@ -440,7 +425,7 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
             children: [
               const Expanded(
                 child: Text(
-                  'This bonus will be usable after 7 days',
+                  'Will unlock when offer conditions are complete.',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 12,
@@ -690,6 +675,10 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
 
         final date = (r['date'] ?? r['created_at'] ?? '').toString();
 
+        if (titleText == 'Withdraw Request' && r.containsKey('withdraw_status')) {
+          return _withdrawRequestCard(r, amount, date);
+        }
+
         return _listCard(
           icon: isCredit ? Icons.arrow_downward : Icons.arrow_upward,
           iconColor: isCredit ? Colors.green : Colors.red,
@@ -705,6 +694,140 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _withdrawRequestCard(Map<String, dynamic> r, double amount, String date) {
+    final status = (r['withdraw_status'] ?? '').toString().toLowerCase();
+    final paymentMethod = (r['payment_method'] ?? '').toString();
+    final reference = (r['transaction_reference'] ?? '').toString();
+    final remarks = (r['remarks'] ?? '').toString();
+    
+    String displayDate = date;
+    if (status == 'approved' && r['approved_at'] != null && r['approved_at'].toString().isNotEmpty) {
+      displayDate = r['approved_at'].toString();
+    } else if (status == 'rejected' && r['rejected_at'] != null && r['rejected_at'].toString().isNotEmpty) {
+      displayDate = r['rejected_at'].toString();
+    }
+    
+    Color statusColor;
+    String statusIcon;
+    String statusText;
+    
+    if (status == 'approved') {
+      statusColor = Colors.green;
+      statusIcon = '🟢';
+      statusText = 'Approved';
+    } else if (status == 'rejected') {
+      statusColor = Colors.red;
+      statusIcon = '🔴';
+      statusText = 'Rejected';
+    } else {
+      statusColor = Colors.orange;
+      statusIcon = '🟡';
+      statusText = 'Pending';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.red.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.arrow_upward, color: Colors.red),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Withdraw Request', style: AppTextStyles.body1.copyWith(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 4),
+                            Text(displayDate, style: AppTextStyles.caption),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '-₹${amount.toStringAsFixed(2)}',
+                  style: const TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(statusIcon),
+                      const SizedBox(width: 6),
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (paymentMethod.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Payment Method : $paymentMethod', style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary)),
+                  ],
+                  if (reference.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('Reference No : $reference', style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary)),
+                  ],
+                  if (remarks.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text('Remarks : $remarks', style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary)),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

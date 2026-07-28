@@ -49,8 +49,9 @@ class WishlistScreenState extends State<WishlistScreen> {
       _applySort(selectedSort);
     } catch (e) {
       if (!mounted) return;
+      print('💥 Failed to load Wishlist API: $e');
       setState(() {
-        _error = e.toString();
+        _error = 'Failed to load data';
         _isLoading = false;
       });
     }

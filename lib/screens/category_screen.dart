@@ -7,6 +7,7 @@ import '../api_service.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_text_styles.dart';
 import '../widgets/app_snackbar.dart';
+import '../widgets/custom_cached_image.dart';
 
 class CategoryScreen extends StatefulWidget {
   final bool initialIsEatableTab;
@@ -92,9 +93,10 @@ class _CategoryScreenState extends State<CategoryScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      print('💥 Failed to load categories: $e');
       setState(() => isLoading = false);
       if (mounted) {
-        AppSnackBar.show(context, 'Error fetching categories: $e', type: AppSnackType.error);
+        AppSnackBar.show(context, 'Failed to load data', type: AppSnackType.error);
       }
     }
   }
@@ -138,12 +140,13 @@ class _CategoryScreenState extends State<CategoryScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+      print('💥 Failed to load category products: $e');
       setState(() {
         isLoadingProducts = false;
         categoryProducts = [];
       });
       if (mounted) {
-        AppSnackBar.show(context, 'Error fetching category products: $e', type: AppSnackType.error);
+        AppSnackBar.show(context, 'Failed to load data', type: AppSnackType.error);
       }
     }
   }
@@ -181,6 +184,11 @@ class _CategoryScreenState extends State<CategoryScreen> {
           itemCount: subList.length,
           itemBuilder: (context, index) {
             final subcategory = subList[index];
+            String? imageUrl;
+            final imageField = subcategory['image'];
+            if (imageField is Map && imageField.containsKey('src') && imageField['src'] != null) {
+              imageUrl = imageField['src'].toString().trim();
+            }
             return GestureDetector(
               onTap: () {
                 Navigator.push(
@@ -195,7 +203,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
               },
               child: SubcategoryCard(
                 name: subcategory['name'],
-                imageUrl: subcategory['image']?['src'],
+                imageUrl: imageUrl,
               ),
             );
           },
@@ -615,29 +623,14 @@ class SubcategoryCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Image or placeholder
-          if (imageUrl != null)
+          if (imageUrl != null && imageUrl!.isNotEmpty)
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrl!,
+              child: CustomCachedImage(
+                imageUrl: imageUrl!,
                 height: 72,
                 width: 72,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Container(
-                    height: 72,
-                    width: 72,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[200],
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      Icons.image_outlined,
-                      size: 40,
-                      color: Colors.grey[400],
-                    ),
-                  );
-                },
               ),
             )
           else

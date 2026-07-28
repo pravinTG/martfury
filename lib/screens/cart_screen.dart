@@ -44,8 +44,9 @@ class CartScreenState extends State<CartScreen> {
       });
     } catch (e) {
       if (!mounted) return;
+      print('💥 Failed to load Cart API: $e');
       setState(() {
-        _error = e.toString();
+        _error = 'Failed to load data';
         _isLoading = false;
       });
     }
@@ -629,7 +630,7 @@ class CartScreenState extends State<CartScreen> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (_cartData == null) return;
                 if (hasOutOfStockItems) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -640,12 +641,16 @@ class CartScreenState extends State<CartScreen> {
                   );
                   return;
                 }
-                Navigator.push(
+                await Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => AddressSelectionScreen(cartData: _cartData!),
                   ),
                 );
+                if (mounted) {
+                  await _loadCart();
+                  widget.onCartChanged?.call();
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.headerRed,

@@ -3,6 +3,7 @@ import 'package:martfury/api_service.dart';
 import 'package:martfury/screens/order_detail_screen.dart';
 import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/widgets/async_state_view.dart';
+import 'package:martfury/utils/date_utils.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -58,7 +59,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   final orderId = order['id'];
                   final status = (order['status'] ?? '').toString();
                   final total = (order['total'] ?? '').toString();
-                  final createdAt = (order['date_created'] ?? '').toString();
+                  final rawCreatedAt = (order['date_created'] ?? '').toString();
+                  final createdAt = DateUtilsHelper.formatToIST(rawCreatedAt);
 
                   return ListTile(
                     title: Text('Order #$orderId'),

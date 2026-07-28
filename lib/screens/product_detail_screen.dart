@@ -1517,7 +1517,7 @@
                             };
 
                             if (!mounted) return;
-                            Navigator.push(
+                            await Navigator.push(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => AddressSelectionScreen(cartData: singleItemCartData),

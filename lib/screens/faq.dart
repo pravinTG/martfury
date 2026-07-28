@@ -39,6 +39,7 @@ class _FaqScreenState extends State<FaqScreen> {
         _loading = false;
       });
     } catch (e) {
+      print('💥 Failed to load FAQ API: $e');
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -77,9 +78,10 @@ class _FaqScreenState extends State<FaqScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                'Error: $_error',
+              const Text(
+                'Failed to load data',
                 textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 16, color: Colors.black54),
               ),
               const SizedBox(height: 12),
               ElevatedButton(
