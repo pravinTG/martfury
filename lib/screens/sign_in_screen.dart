@@ -183,15 +183,15 @@ class _SignInScreenState extends State<SignInScreen> {
       appVersion: '1.0.0',
     );
 
-    final user = response['user'];
-    final apiUserId = user is Map<String, dynamic>
-        ? user['id']?.toString()
-        : response['user_id']?.toString() ?? response['id']?.toString();
+    final userData = response['user'] ?? (response['data'] is Map ? response['data']['user'] : null);
+    final apiUserId = userData is Map<String, dynamic>
+        ? userData['id']?.toString()
+        : response['user_id']?.toString() ?? response['id']?.toString() ?? (response['data'] is Map ? (response['data']['user_id']?.toString() ?? response['data']['id']?.toString()) : null);
     if (apiUserId != null && apiUserId.isNotEmpty) {
       await TokenStorageService.saveUserId(apiUserId);
       debugPrint('OTP_VERIFY: saved API user id=$apiUserId');
     } else {
-      debugPrint('OTP_VERIFY: API user id missing in response');
+      debugPrint('OTP_VERIFY: API user id missing in response. Response was: $response');
     }
   }
 

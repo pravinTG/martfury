@@ -19,6 +19,7 @@ class CartScreenState extends State<CartScreen> {
   Map<String, dynamic>? _cartData;
   bool _isLoading = true;
   String? _error;
+  final Map<String, String> _fallbackImages = {};
 
   @override
   void initState() {
@@ -42,6 +43,7 @@ class CartScreenState extends State<CartScreen> {
         _cartData = data;
         _isLoading = false;
       });
+      _fetchMissingImages();
     } catch (e) {
       if (!mounted) return;
       print('💥 Failed to load Cart API: $e');
@@ -92,6 +94,39 @@ class CartScreenState extends State<CartScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to update quantity: $e'), backgroundColor: Colors.red),
         );
+      }
+    }
+  }
+
+  Future<void> _fetchMissingImages() async {
+    final items = _getCartItems();
+    for (final item in items) {
+      if (item is! Map) continue;
+      final productId = item['product_id']?.toString() ?? '';
+      if (productId.isEmpty || productId == '0') continue;
+      
+      final image = item['image'];
+      final imageUrl = image is String ? image : '';
+      if (imageUrl.isEmpty && !_fallbackImages.containsKey(productId)) {
+        try {
+          final productData = await _apiService.getProductDetails(int.parse(productId));
+          if (productData != null) {
+            String fallbackUrl = '';
+            if (productData['images'] is List && (productData['images'] as List).isNotEmpty) {
+              final first = (productData['images'] as List).first;
+              if (first is Map && first['src'] != null) {
+                fallbackUrl = first['src'].toString();
+              }
+            }
+            if (mounted && fallbackUrl.isNotEmpty) {
+              setState(() {
+                _fallbackImages[productId] = fallbackUrl;
+              });
+            }
+          }
+        } catch (e) {
+          // Ignore API error for lazy loading
+        }
       }
     }
   }
@@ -302,8 +337,13 @@ class CartScreenState extends State<CartScreen> {
     final regularPrice = item['regular_price'] ?? '';
     final salePrice = item['sale_price'] ?? '';
 
-    // API returns 'image' as a direct string URL
-    final imageUrl = item['image'] ?? '';
+    // API returns 'image' as a direct string URL or false if no image
+    final image = item['image'];
+    String imageUrl = image is String ? image : '';
+    
+    if (imageUrl.isEmpty && _fallbackImages.containsKey(productId)) {
+      imageUrl = _fallbackImages[productId]!;
+    }
 
     final bool isOnSale = salePrice.toString().isNotEmpty;
     final bool isOutOfStock = stockStatus == 'outofstock';

@@ -77,11 +77,7 @@ class TabScreen extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        if (index == 4 && context != null) {
-          ComingSoonPopup.show(context);
-        } else {
-          onItemTapped(index);
-        }
+        onItemTapped(index);
       },
       child: Column(
         mainAxisSize: MainAxisSize.min,

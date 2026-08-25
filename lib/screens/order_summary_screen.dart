@@ -32,6 +32,7 @@
     String _selectedPaymentMethod = 'razorpay';
     double? _walletBalance;
     Map<String, dynamic>? _localCartData;
+    double _deliveryCharge = 0;
   
     List<dynamic> get _cartItems {
       final dataToUse = _localCartData ?? widget.cartData;
@@ -71,6 +72,7 @@
     void initState() {
       super.initState();
       _fetchWalletBalance();
+      _fetchDeliveryCharge();
       _razorpay = Razorpay();
   
       _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, (PaymentSuccessResponse response) {
@@ -110,6 +112,19 @@
           }
         }
       } catch (_) {}
+    }
+
+    Future<void> _fetchDeliveryCharge() async {
+      try {
+        final data = await _apiService.getDeliveryCharge(_subTotal);
+        if (mounted) {
+          setState(() {
+            _deliveryCharge = double.tryParse(data['delivery_charge']?.toString() ?? '0') ?? 0;
+          });
+        }
+      } catch (e) {
+        print('Error fetching delivery charge: $e');
+      }
     }
   
     Future<void> _updateQuantity(String productId, int newQuantity, String? variationId) async {
@@ -151,6 +166,7 @@
                 _selectedPaymentMethod = 'razorpay';
               }
             });
+            await _fetchDeliveryCharge();
           }
         } else {
           final newData = await _apiService.getCart();
@@ -162,6 +178,7 @@
                 _selectedPaymentMethod = 'razorpay';
               }
             });
+            await _fetchDeliveryCharge();
           }
         }
       } catch (e) {
@@ -199,6 +216,7 @@
                 _selectedPaymentMethod = 'razorpay';
               }
             });
+            await _fetchDeliveryCharge();
           }
         } else {
           final newData = await _apiService.getCart();
@@ -210,6 +228,7 @@
                 _selectedPaymentMethod = 'razorpay';
               }
             });
+            await _fetchDeliveryCharge();
           }
         }
       } catch (e) {
@@ -295,7 +314,10 @@
       if (_isPlacingOrder) return;
   
       // Razorpay amount is in paise (1 INR = 100 paise).
-      final amountPaise = (_cartTotal * 100).round();
+      final baseTotal = _cartTotal > 0 ? _cartTotal : _subTotal;
+      final grandTotal = baseTotal + _deliveryCharge;
+      final amountPaise = (grandTotal * 100).round();
+      
       if (amountPaise <= 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Invalid cart total for payment')),
@@ -385,6 +407,7 @@
             paymentMethodTitle: 'Razorpay',
             setPaid: true,
             transactionId: paymentId,
+            deliveryCharge: _deliveryCharge,
           );
           orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
         } else if (_selectedPaymentMethod == 'wallet') {
@@ -402,6 +425,7 @@
             userId: uid,
             billing: billing,
             products: lineItems,
+            deliveryCharge: _deliveryCharge,
           );
           
           orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
@@ -417,6 +441,7 @@
             paymentMethod: 'cod',
             paymentMethodTitle: 'Cash on Delivery',
             setPaid: false,
+            deliveryCharge: _deliveryCharge,
           );
           orderId = (result['order_id'] ?? result['id'] ?? result['number'])?.toString() ?? '';
         }
@@ -869,8 +894,9 @@
     }
   
     Widget _totalCard() {
-      final shipping = 0.0;
-      final grandTotal = _cartTotal > 0 ? _cartTotal : _subTotal + shipping;
+      final shipping = _deliveryCharge;
+      final baseTotal = _cartTotal > 0 ? _cartTotal : _subTotal;
+      final grandTotal = baseTotal + shipping;
       return Container(
         decoration: BoxDecoration(
           color: Colors.white,

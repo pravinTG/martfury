@@ -131,6 +131,45 @@ class ApiService {
     throw Exception('Request failed after $maxRetries retries');
   }
 
+  Future<http.Response> _retryAuthRequest(Future<http.Response> Function(Map<String, String> headers) requestFunc, {int maxRetries = 2}) async {
+    for (int attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        var headers = await _getAuthHeaders();
+        var response = await requestFunc(headers);
+        
+        if (response.statusCode >= 500 && attempt < maxRetries) {
+          print('⚠️ 500 Server Error, retrying request (attempt ${attempt + 1})...');
+          await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+          continue;
+        }
+        
+        if (response.statusCode == 401 && attempt < maxRetries) {
+          print('⚠️ 401 Unauthorized detected. Forcing token refresh (attempt ${attempt + 1})...');
+          final user = FirebaseAuth.instance.currentUser;
+          if (user != null) {
+            try {
+              final newToken = await user.getIdToken(true);
+              if (newToken != null && newToken.isNotEmpty) {
+                await TokenStorageService.saveIdToken(newToken);
+              }
+            } catch (e) {
+              print('⚠️ Failed to refresh token: $e');
+            }
+          }
+          await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+          continue;
+        }
+        
+        return response;
+      } catch (e) {
+        if (attempt >= maxRetries) rethrow;
+        print('⚠️ Request Exception, retrying (attempt ${attempt + 1})...: $e');
+        await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+      }
+    }
+    throw Exception('Request failed after $maxRetries retries');
+  }
+
   // =========================================================================
   // AUTH
   // =========================================================================
@@ -336,10 +375,7 @@ class ApiService {
       final url = Uri.parse('$baseUrl/cart?_t=$timestamp');
       print('🛒 Get Cart: GET $url');
 
-      final headers = await _getAuthHeaders();
-      print('🔑 Headers: $headers');
-
-      final response = await _retryRequest(() => http.get(url, headers: headers));
+      final response = await _retryAuthRequest((headers) => http.get(url, headers: headers));
 
       print('📡 Response Status: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');
@@ -414,12 +450,11 @@ class ApiService {
 
       print('📤 Request Body: ${json.encode(body)}');
 
-      final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode(body),
-      );
+      ));
 
       print('📡 Response Status: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');
@@ -450,14 +485,11 @@ class ApiService {
       final body = {'product_id': productId};
       print('📤 Request Body: ${json.encode(body)}');
 
-      final headers = await _getAuthHeaders();
-      print('🔑 Headers: $headers');
-
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode(body),
-      );
+      ));
 
       print('📡 Response Status: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');
@@ -526,8 +558,7 @@ class ApiService {
       final url = Uri.parse('$baseUrl/cart/clear?_t=$timestamp');
       print('🧹 Clear Cart: POST $url');
 
-      final headers = await _getAuthHeaders();
-      final response = await http.post(url, headers: headers);
+      final response = await _retryAuthRequest((headers) => http.post(url, headers: headers));
 
       print('📡 Response Status: ${response.statusCode}');
       print('📦 Response Body: ${response.body}');
@@ -558,8 +589,7 @@ class ApiService {
           : '$baseUrl/address/list?_t=$timestamp';
       final url = Uri.parse(urlStr);
       print('📍 Get Address List: GET $url');
-      final headers = await _getAuthHeaders();
-      final response = await http.get(url, headers: headers);
+      final response = await _retryAuthRequest((headers) => http.get(url, headers: headers));
       
       print('📡 Get Address List Response Status: ${response.statusCode}');
       print('📦 Get Address List Response Body: ${response.body}');
@@ -630,12 +660,11 @@ class ApiService {
       final url = Uri.parse('$baseUrl/address/add?_t=$timestamp');
       print('➕ Add Address: POST $url');
       print('📤 Request Body (Address): ${json.encode(address)}');
-      final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode({'address': address}),
-      );
+      ));
 
       print('📡 Add Address Response Status: ${response.statusCode}');
       print('📦 Add Address Response Body: ${response.body}');
@@ -667,12 +696,11 @@ class ApiService {
       final url = Uri.parse('$baseUrl/address/update?_t=$timestamp');
       print('✏️ Update Address: POST $url');
       print('📤 Request Body (Address): ${json.encode(address)}');
-      final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode({'address': address}),
-      );
+      ));
 
       print('📡 Update Address Response Status: ${response.statusCode}');
       print('📦 Update Address Response Body: ${response.body}');
@@ -698,12 +726,11 @@ class ApiService {
       final urlStr = userId != null ? '$baseUrl/address/delete?customer_id=$userId&user_id=$userId&_t=$timestamp' : '$baseUrl/address/delete?_t=$timestamp';
       final url = Uri.parse(urlStr);
       print('🗑️ Delete Address: POST $url, id: $id');
-      final headers = await _getAuthHeaders();
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode({'id': id, 'customer_id': userId, 'user_id': userId}),
-      );
+      ));
 
       print('📡 Delete Address Response Status: ${response.statusCode}');
       print('📦 Delete Address Response Body: ${response.body}');
@@ -766,11 +793,11 @@ class ApiService {
         'delivery_charge': deliveryCharge,
       };
 
-      final response = await http.post(
+      final response = await _retryAuthRequest((headers) => http.post(
         url,
         headers: headers,
         body: json.encode(body),
-      );
+      ));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = _decodeJson(response.body);
@@ -950,6 +977,7 @@ class ApiService {
     bool setPaid = false,
     String? transactionId,
     List<dynamic>? metaData,
+    double deliveryCharge = 0,
   }) async {
     try {
       final userIdStr = await TokenStorageService.getUserId();
@@ -979,6 +1007,7 @@ class ApiService {
           'payment_id': transactionId,
         },
         if (metaData != null) 'meta_data': metaData,
+        if (deliveryCharge > 0) 'delivery_charge': deliveryCharge,
       };
 
       print('📤 Request Body: ${json.encode(body)}');
@@ -1374,6 +1403,7 @@ class ApiService {
     required int userId,
     required Map<String, dynamic> billing,
     required List<Map<String, dynamic>> products,
+    double deliveryCharge = 0,
   }) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final url = Uri.parse('https://goodiesworld.in/wp-json/tgw/v1/mobile-checkout?_t=$timestamp');
@@ -1393,6 +1423,7 @@ class ApiService {
       'payment_method': 'wallet',
       'billing': billing,
       'products': mappedProducts,
+      if (deliveryCharge > 0) 'delivery_charge': deliveryCharge,
     };
     
     print('💸 Pay from Wallet: POST $url');
@@ -1468,5 +1499,47 @@ class ApiService {
     }
     
     throw Exception('Failed to submit form. Server returned ${response.statusCode}');
+  }
+
+  Future<List<Map<String, dynamic>>> getRechargeOffers() async {
+    try {
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final url = Uri.parse('https://goodiesworld.in/wp-json/techgig-wallet/v1/recharge-offers?_t=$timestamp');
+      print('🎁 Get Recharge Offers: $url');
+      final response = await http.get(url, headers: _basicHeaders);
+      
+      if (response.statusCode == 200) {
+        print('📦 Recharge Offers Response Body: ${response.body}');
+        final data = _decodeJson(response.body);
+        if (data is Map<String, dynamic> && data['status'] == true && data['offers'] is List) {
+          return (data['offers'] as List).map((e) => Map<String, dynamic>.from(e)).toList();
+        }
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching recharge offers: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>> getDeliveryCharge(double subtotal) async {
+    try {
+      final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/delivery-charge');
+      final response = await http.post(
+        url,
+        headers: _basicHeaders,
+        body: json.encode({'subtotal': subtotal}),
+      );
+      if (response.statusCode == 200) {
+        final data = _decodeJson(response.body);
+        if (data is Map<String, dynamic>) {
+          return data;
+        }
+      }
+      return {};
+    } catch (e) {
+      print('Error fetching delivery charge: $e');
+      return {};
+    }
   }
 }

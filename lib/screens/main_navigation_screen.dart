@@ -11,7 +11,7 @@ import 'package:upgrader/upgrader.dart';
 
 import 'home_screen.dart';
 import 'category_screen.dart';
-import 'menu_screen.dart';
+import 'offers_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   static const String routeName = '/main';
@@ -121,7 +121,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               key: _wishlistKey,
               onCartChanged: _refreshCartCount,
             ) : const SizedBox(),
-            _visitedTabs[4] ? const MenuScreen() : const SizedBox(),
+            _visitedTabs[4] ? const OffersScreen() : const SizedBox(),
           ],
         ),
         bottomNavigationBar: TabScreen(
