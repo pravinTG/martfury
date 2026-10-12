@@ -220,7 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = json.decode(response.body);
+        final List<dynamic> data = ApiService.decodeJson(response.body);
         final fetched = data.map((e) => Map<String, dynamic>.from(e)).toList();
         _hasMoreProducts = fetched.length == _productsPerPage;
         if (append) {

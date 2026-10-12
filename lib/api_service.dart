@@ -16,14 +16,16 @@ class ApiService {
       'Basic Y2tfYWZlY2FmZmFmNzhkMTE5ZGU2YmNhMzk0ZTk4YTA4N2E0NjM5YTJjMTpjc182OTVkNDA2OTc0YzE4ZTM1YWUzN2M3YjVhY2YxNGZkYTgwNGYwZmM3';
 
   // ─── Auth Headers (Firebase token if available, else Basic) ───────────────
-  Future<Map<String, String>> _getAuthHeaders() async {
+  /// [forceRefresh] forces a new Firebase token to be fetched from the server,
+  /// bypassing any cached token. Pass `true` on retry attempts after a 401.
+  Future<Map<String, String>> _getAuthHeaders({bool forceRefresh = false}) async {
     String? idToken;
     final firebaseUser = FirebaseAuth.instance.currentUser;
 
     if (firebaseUser != null) {
       try {
         // Prefer the latest Firebase token to avoid stale-session 401 issues.
-        idToken = await firebaseUser.getIdToken();
+        idToken = await firebaseUser.getIdToken(forceRefresh);
         if (idToken != null && idToken.isNotEmpty) {
           await TokenStorageService.saveIdToken(idToken);
         }
@@ -99,9 +101,33 @@ class ApiService {
     };
   }
 
-  // ─── Retry Helper ────────────────────────────────────────────────────────
-  dynamic _decodeJson(String body) {
-    String cleaned = body
+  // ─── JSON Decoding & Sanitization Helper ──────────────────────────────────
+  static dynamic decodeJson(String rawBody) {
+    // 1. Fast path: standard clean JSON
+    try {
+      return json.decode(rawBody);
+    } catch (_) {}
+
+    // 2. Strip rogue HTML wrappers (<style>, <script>, PHP warnings/notices) and isolate JSON
+    String sanitized = _sanitizeAndExtractJson(rawBody);
+    try {
+      return json.decode(sanitized);
+    } catch (_) {}
+
+    // 3. Try decoding with HTML entities decoded
+    String cleaned = _replaceHtmlEntities(sanitized);
+    try {
+      return json.decode(cleaned);
+    } catch (_) {}
+
+    // 4. Fallback: entity replacement on raw body then sanitize and isolate
+    cleaned = _replaceHtmlEntities(rawBody);
+    cleaned = _sanitizeAndExtractJson(cleaned);
+    return json.decode(cleaned);
+  }
+
+  static String _replaceHtmlEntities(String body) {
+    return body
         .replaceAll('&amp;', '&')
         .replaceAll('&#038;', '&')
         .replaceAll('&#039;', "'")
@@ -109,8 +135,45 @@ class ApiService {
         .replaceAll('&quot;', '\\"')
         .replaceAll('&lt;', '<')
         .replaceAll('&gt;', '>');
-    return json.decode(cleaned);
   }
+
+  static String _sanitizeAndExtractJson(String input) {
+    String s = input.trim();
+    if (s.startsWith('\uFEFF')) {
+      s = s.substring(1).trim();
+    }
+
+    if (!s.startsWith('{') && !s.startsWith('[')) {
+      s = s
+          .replaceAll(RegExp(r'<style[^>]*>[\s\S]*?<\/style>', caseSensitive: false), '')
+          .replaceAll(RegExp(r'<script[^>]*>[\s\S]*?<\/script>', caseSensitive: false), '')
+          .replaceAll(RegExp(r'<!--[\s\S]*?-->'), '')
+          .trim();
+    }
+
+    final firstBrace = s.indexOf('{');
+    final firstBracket = s.indexOf('[');
+    int start = -1;
+    if (firstBrace != -1 && firstBracket != -1) {
+      start = (firstBrace < firstBracket) ? firstBrace : firstBracket;
+    } else if (firstBrace != -1) {
+      start = firstBrace;
+    } else if (firstBracket != -1) {
+      start = firstBracket;
+    }
+
+    if (start != -1) {
+      final bool isObject = s[start] == '{';
+      final int end = isObject ? s.lastIndexOf('}') : s.lastIndexOf(']');
+      if (end != -1 && end >= start) {
+        s = s.substring(start, end + 1).trim();
+      }
+    }
+
+    return s;
+  }
+
+  dynamic _decodeJson(String body) => decodeJson(body);
 
   Future<http.Response> _retryRequest(Future<http.Response> Function() requestFunc, {int maxRetries = 2}) async {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
@@ -131,40 +194,88 @@ class ApiService {
     throw Exception('Request failed after $maxRetries retries');
   }
 
-  Future<http.Response> _retryAuthRequest(Future<http.Response> Function(Map<String, String> headers) requestFunc, {int maxRetries = 2}) async {
+  Future<http.Response> _retryAuthRequest(
+    Future<http.Response> Function(Map<String, String> headers) requestFunc, {
+    int maxRetries = 3,
+  }) async {
     for (int attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        var headers = await _getAuthHeaders();
+        // Always force-refresh the token on retries so a stale cached token
+        // doesn't keep causing 401s after a fresh login.
+        final forceRefresh = attempt > 0;
+        var headers = await _getAuthHeaders(forceRefresh: forceRefresh);
         var response = await requestFunc(headers);
-        
+
         if (response.statusCode >= 500 && attempt < maxRetries) {
           print('⚠️ 500 Server Error, retrying request (attempt ${attempt + 1})...');
-          await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+          await Future.delayed(Duration(milliseconds: 1500 * (attempt + 1)));
           continue;
         }
+
+        bool isAuthError = response.statusCode == 401 || response.statusCode == 403;
         
-        if (response.statusCode == 401 && attempt < maxRetries) {
-          print('⚠️ 401 Unauthorized detected. Forcing token refresh (attempt ${attempt + 1})...');
+        // Also check if the backend returned a 200/404 with a session error message
+        if (!isAuthError && response.statusCode >= 200 && response.statusCode < 500) {
+          try {
+            final data = _decodeJson(response.body);
+            if (data is Map && data['message'] != null) {
+              final msg = data['message'].toString().toLowerCase();
+              if (msg.contains('no data found') || 
+                  msg.contains('user not found') || 
+                  msg.contains('expired')) {
+                isAuthError = true;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (isAuthError && attempt < maxRetries) {
+          print('⚠️ Auth Error (401/403/No Data) detected. Forcing token refresh and backend re-login (attempt ${attempt + 1})...');
           final user = FirebaseAuth.instance.currentUser;
           if (user != null) {
             try {
               final newToken = await user.getIdToken(true);
               if (newToken != null && newToken.isNotEmpty) {
                 await TokenStorageService.saveIdToken(newToken);
+                
+                // If the backend session expired after 2 hours, simply refreshing 
+                // the Firebase token isn't enough. We must recreate the WP session.
+                try {
+                  final userIdStr = await TokenStorageService.getUserId();
+                  if (userIdStr != null) {
+                    await firebaseLogin(
+                      idToken: newToken,
+                      fcmToken: '', // Can be left empty for re-auth
+                      platform: 'android', // Fallback, doesn't matter for re-auth
+                      osVersion: '1.0',
+                      appVersion: '1.0',
+                    );
+                    await syncFirebaseUser(
+                      userId: int.parse(userIdStr),
+                      firebaseUid: user.uid,
+                      phoneNumber: user.phoneNumber ?? '',
+                    );
+                  }
+                } catch (e) {
+                  print('⚠️ Backend re-auth failed: $e');
+                }
               }
             } catch (e) {
               print('⚠️ Failed to refresh token: $e');
             }
           }
-          await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+          // Use a longer delay to allow the backend UID-mapping to propagate.
+          final delayMs = attempt == 0 ? 2000 : 4000;
+          print('⚠️ Waiting ${delayMs}ms before retry ${attempt + 1}...');
+          await Future.delayed(Duration(milliseconds: delayMs));
           continue;
         }
-        
+
         return response;
       } catch (e) {
         if (attempt >= maxRetries) rethrow;
         print('⚠️ Request Exception, retrying (attempt ${attempt + 1})...: $e');
-        await Future.delayed(Duration(milliseconds: 1000 * (attempt + 1)));
+        await Future.delayed(Duration(milliseconds: 1500 * (attempt + 1)));
       }
     }
     throw Exception('Request failed after $maxRetries retries');
@@ -216,6 +327,50 @@ class ApiService {
     } catch (e) {
       print('💥 Exception: $e');
       throw Exception('Error during Firebase login: $e');
+    }
+  }
+
+  // =========================================================================
+  // FIREBASE USER SYNC
+  // =========================================================================
+
+  Future<Map<String, dynamic>> syncFirebaseUser({
+    required int userId,
+    required String firebaseUid,
+    required String phoneNumber,
+  }) async {
+    try {
+      final url = Uri.parse('https://goodiesworld.in/wp-json/tgw/v1/firebase-user-sync');
+      print('🔄 Sync Firebase User API Call: POST $url');
+
+      final body = {
+        'user_id': userId,
+        'firebase_uid': firebaseUid,
+        'phone_number': phoneNumber,
+      };
+
+      print('📤 Request Body: ${json.encode(body)}');
+
+      final response = await http.post(
+        url,
+        headers: _basicHeaders,
+        body: json.encode(body),
+      );
+
+      print('📡 Response Status: ${response.statusCode}');
+      print('📦 Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = _decodeJson(response.body);
+        print('✅ Firebase user synced successfully');
+        return data is Map<String, dynamic> ? data : {'data': data};
+      } else {
+        print('❌ Error: ${response.statusCode} - ${response.body}');
+        throw Exception('Firebase user sync failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('💥 Exception: $e');
+      throw Exception('Error during Firebase user sync: $e');
     }
   }
 
@@ -401,10 +556,14 @@ class ApiService {
         } catch (_) {}
 
         final backendMessage = (errorData['message'] ?? '').toString();
+        // NOTE: "User not found for Firebase UID" is a transient race-condition
+        // that occurs right after a fresh login before the backend mapping is
+        // persisted. The _retryAuthRequest wrapper above already retried with
+        // longer delays, so at this point we surface a clear error.
         if (response.statusCode == 401 &&
             backendMessage.contains('User not found for Firebase UID')) {
           throw Exception(
-            'We could not verify your cart session right now. Please sign in again.',
+            'Session verification failed. Please pull down to retry.',
           );
         }
 
@@ -1228,30 +1387,35 @@ class ApiService {
 
   Future<List<Map<String, dynamic>>> getWalletTransactions(int userId, {int page = 1, int limit = 20}) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final url = Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/transactions/$userId?_t=$timestamp');
-    print('💸 Get Wallet Transactions: GET $url');
     final headers = await _getAuthHeaders();
-    try {
-      final response = await http.get(url, headers: headers);
-      print('📡 Response Status: ${response.statusCode}');
-      print('📦 Response Body: ${response.body}');
+    final urls = [
+      Uri.parse('https://goodiesworld.in/wp-json/techgigs-wallet/v1/transactions/$userId?_t=$timestamp'),
+      Uri.parse('https://goodiesworld.in/wp-json/tgw/v1/wallet-transactions/$userId?_t=$timestamp'),
+    ];
 
-      if (response.statusCode == 200) {
-        final data = _decodeJson(response.body);
-        if (data is Map<String, dynamic>) {
-          var items = data['transactions'] ?? data['data'];
-          if (items is! List) items = [];
-          return (items as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-        } else if (data is List) {
-          return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    for (final url in urls) {
+      try {
+        print('💸 Get Wallet Transactions: GET $url');
+        final response = await http.get(url, headers: headers);
+        print('📡 Response Status: ${response.statusCode}');
+        print('📦 Response Body: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final data = _decodeJson(response.body);
+          if (data is Map<String, dynamic>) {
+            var items = data['transactions'] ?? data['data'];
+            if (items is! List) items = [];
+            return (items as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          } else if (data is List) {
+            return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+          }
+          return <Map<String, dynamic>>[];
         }
-        return <Map<String, dynamic>>[];
+      } catch (e) {
+        print('💥 Error fetching from $url: $e');
       }
-      throw Exception('Failed with status: ${response.statusCode}, body: ${response.body}');
-    } catch (e) {
-      print('💥 Error in getWalletTransactions: $e');
-      throw Exception('Unable to load wallet transactions: $e');
     }
+    throw Exception('Unable to load wallet transactions.');
   }
 
   Future<List<Map<String, dynamic>>> getWithdrawRequests(int userId) async {

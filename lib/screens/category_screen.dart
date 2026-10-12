@@ -129,7 +129,7 @@ class _CategoryScreenState extends State<CategoryScreen> {
       );
 
       if (response.statusCode == 200) {
-        List<dynamic> data = json.decode(response.body);
+        List<dynamic> data = ApiService.decodeJson(response.body);
         if (!mounted) return;
         setState(() {
           categoryProducts = data.map((e) => Map<String, dynamic>.from(e)).toList();

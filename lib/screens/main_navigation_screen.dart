@@ -8,6 +8,8 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:in_app_update/in_app_update.dart';
 import 'package:upgrader/upgrader.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../token_storage_service.dart';
 
 import 'home_screen.dart';
 import 'category_screen.dart';
@@ -22,7 +24,8 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen>
+    with WidgetsBindingObserver {
   int _selectedIndex = 0;
   final ApiService _apiService = ApiService();
   final GlobalKey<CartScreenState> _cartKey = GlobalKey<CartScreenState>();
@@ -31,12 +34,97 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _cartCount = 0;
   final List<bool> _visitedTabs = [true, false, false, false, false];
 
+  /// Timestamp of last token refresh — used to avoid redundant force-refreshes.
+  DateTime? _lastTokenRefresh;
+
   @override
   void initState() {
     super.initState();
-    _refreshCartCount();
-    _refreshWishlist();
+    WidgetsBinding.instance.addObserver(this);
+    _initSession();
     _checkForAndroidUpdate();
+  }
+
+  /// Full session init: sync user → refresh token → load cart count.
+  /// Called once on startup and again every time app resumes.
+  Future<void> _initSession() async {
+    await _syncUserIfNeeded();
+    await _refreshCartCount();
+    await _refreshWishlist();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Called automatically whenever the app lifecycle state changes.
+  /// On [AppLifecycleState.resumed] we force-refresh the Firebase token so
+  /// that stale/expired tokens (>1 hour old) never reach the backend.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _onAppResumed();
+    }
+  }
+
+  Future<void> _onAppResumed() async {
+    final now = DateTime.now();
+    // Only force-refresh token if we haven't done so in the last 50 minutes.
+    final shouldRefresh = _lastTokenRefresh == null ||
+        now.difference(_lastTokenRefresh!).inMinutes >= 50;
+
+    if (shouldRefresh) {
+      debugPrint('🔄 App resumed — force-refreshing Firebase token...');
+      try {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final newToken = await user.getIdToken(true);
+          if (newToken != null && newToken.isNotEmpty) {
+            await TokenStorageService.saveIdToken(newToken);
+            _lastTokenRefresh = now;
+            debugPrint('✅ Firebase token refreshed on app resume.');
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ Token refresh on resume failed: $e');
+      }
+    }
+
+    // Re-sync user mapping on EVERY resume — the backend mapping can expire
+    // or be invalidated between sessions (especially on aggressive-battery
+    // devices like Realme/OPPO where the process is fully killed).
+    await _syncUserIfNeeded();
+
+    if (mounted) {
+      _refreshCartCount();
+      if (_selectedIndex == 2) {
+        _cartKey.currentState?.refresh();
+      }
+    }
+  }
+
+  /// Silently re-syncs the Firebase UID → WordPress user mapping.
+  /// This is cheap (one POST request) and ensures the backend always
+  /// recognises the current Firebase user, preventing 401 "User not found"
+  /// errors on getCart() after the app was killed and reopened.
+  Future<void> _syncUserIfNeeded() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      final savedUserId = await TokenStorageService.getUserId();
+      if (user == null || savedUserId == null || savedUserId.isEmpty) return;
+
+      await _apiService.syncFirebaseUser(
+        userId: int.parse(savedUserId),
+        firebaseUid: user.uid,
+        phoneNumber: user.phoneNumber ?? '',
+      );
+      debugPrint('✅ Firebase user re-synced on app open.');
+    } catch (e) {
+      // Non-fatal — cart retries will handle any resulting 401.
+      debugPrint('⚠️ syncFirebaseUser on resume failed (non-fatal): $e');
+    }
   }
 
   Future<void> _checkForAndroidUpdate() async {

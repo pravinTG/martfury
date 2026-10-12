@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:html_unescape/html_unescape.dart';
 import 'package:martfury/api_service.dart';
+import 'package:martfury/screens/order_detail_screen.dart';
 import 'package:martfury/theme/app_colors.dart';
 import 'package:martfury/theme/app_text_styles.dart';
 import 'package:martfury/token_storage_service.dart';
@@ -660,41 +663,257 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     }
     return Column(
       children: _transactions.map((r) {
-        final amount = double.tryParse((r['amount'] ?? r['total'] ?? '0').toString()) ?? 0;
-        final typeStr = (r['transaction_type_1'] ?? r['type'] ?? r['transaction_type'] ?? '').toString().toLowerCase();
-        final isCredit = typeStr == 'credit' || typeStr.contains('credit');
-        
-        String details = (r['note'] ?? r['details'] ?? '').toString().trim();
-        String titleText = (r['transaction_type'] ?? '').toString().trim();
-        if (titleText.isEmpty || titleText.toLowerCase() == 'debit' || titleText.toLowerCase() == 'credit') {
-          if (details.isNotEmpty) {
-            titleText = details;
-          }
-        }
-        if (titleText.isEmpty) titleText = 'Transaction';
+        final amount = double.tryParse(
+          (r['amount'] ?? r['total'] ?? '0').toString().replaceAll('₹', '').replaceAll(',', '').trim(),
+        ) ?? 0;
+        final typeStr = (r['type'] ?? r['transaction_type_1'] ?? r['transaction_type'] ?? '').toString().toLowerCase();
+        final isCredit = typeStr == 'credit' ||
+            typeStr.contains('credit') ||
+            (r['transaction_type'] ?? '').toString().toLowerCase().contains('credit');
 
+        final titleText = (r['transaction_type'] ?? '').toString().trim();
         final date = (r['date'] ?? r['created_at'] ?? '').toString();
 
         if (titleText == 'Withdraw Request' && r.containsKey('withdraw_status')) {
           return _withdrawRequestCard(r, amount, date);
         }
 
-        return _listCard(
-          icon: isCredit ? Icons.arrow_downward : Icons.arrow_upward,
-          iconColor: isCredit ? Colors.green : Colors.red,
-          title: titleText,
-          subtitle: date,
-          trailing: Text(
-            '${isCredit ? '+' : '-'}₹${amount.toStringAsFixed(2)}',
-            style: TextStyle(
-              color: isCredit ? Colors.green : Colors.red,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        );
+        return _buildTransactionCard(r, amount, isCredit, date);
       }).toList(),
     );
+  }
+
+  Widget _buildTransactionCard(
+    Map<String, dynamic> r,
+    double amount,
+    bool isCredit,
+    String date,
+  ) {
+    final rawNarration = (r['narration'] ?? r['note'] ?? r['details'] ?? '').toString().trim();
+    final narration = _cleanNarration(rawNarration);
+
+    String titleText = (r['transaction_type'] ?? '').toString().trim();
+    if (titleText.isEmpty || titleText.toLowerCase() == 'debit') {
+      titleText = isCredit ? 'Wallet Credit' : 'Wallet Debit';
+    } else if (titleText.toLowerCase() == 'credit') {
+      titleText = 'Wallet Credit';
+    }
+
+    final txnId = (r['transaction_id'] ?? r['txn_id'] ?? '').toString().trim();
+
+    String orderId = (r['order_id'] ?? '').toString().trim();
+    if (orderId.isEmpty && narration.isNotEmpty) {
+      final match = RegExp(r'Order\s*#?\s*(\d+)', caseSensitive: false).firstMatch(narration);
+      if (match != null) {
+        orderId = match.group(1) ?? '';
+      }
+    }
+
+    final displayDate = _formatDate(date);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: isCredit ? const Color(0xFFE8F5E9) : const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                isCredit ? Icons.south_west_rounded : Icons.north_east_rounded,
+                color: isCredit ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          titleText,
+                          style: AppTextStyles.body1.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${isCredit ? '+' : '-'}₹${amount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          color: isCredit ? const Color(0xFF2E7D32) : const Color(0xFFD32F2F),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (narration.isNotEmpty && narration.toLowerCase() != titleText.toLowerCase()) ...[
+                    const SizedBox(height: 5),
+                    Text(
+                      narration,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade800,
+                        height: 1.3,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time_rounded, size: 12, color: Colors.grey.shade400),
+                      const SizedBox(width: 4),
+                      Text(
+                        displayDate.isNotEmpty ? displayDate : date,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Colors.grey.shade500,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (txnId.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: txnId));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Transaction ID copied'),
+                            duration: Duration(seconds: 1),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Txn ID: ',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            txnId,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(Icons.copy_rounded, size: 11, color: Colors.grey.shade400),
+                        ],
+                      ),
+                    ),
+                  ],
+                  if (orderId.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    InkWell(
+                      onTap: () => _openOrderDetail(orderId),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.headerRed.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.headerRed.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.receipt_long_outlined, size: 12, color: AppColors.headerRed),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Order #$orderId',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.headerRed,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: AppColors.headerRed),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _cleanNarration(String raw) {
+    if (raw.isEmpty) return '';
+    String text = raw.replaceAll(RegExp(r'<[^>]*>'), ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    try {
+      text = HtmlUnescape().convert(text);
+    } catch (_) {}
+    return text.trim();
+  }
+
+  String _formatDate(String rawDate) {
+    if (rawDate.trim().isEmpty) return '';
+    try {
+      final dt = DateTime.tryParse(rawDate);
+      if (dt == null) return rawDate;
+
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final monthName = months[dt.month - 1];
+      final day = dt.day.toString().padLeft(2, '0');
+      final year = dt.year;
+
+      int hour = dt.hour;
+      final ampm = hour >= 12 ? 'PM' : 'AM';
+      hour = hour % 12;
+      if (hour == 0) hour = 12;
+      final minute = dt.minute.toString().padLeft(2, '0');
+
+      return '$day $monthName $year, $hour:$minute $ampm';
+    } catch (_) {
+      return rawDate;
+    }
+  }
+
+  void _openOrderDetail(String orderIdStr) {
+    final oid = int.tryParse(orderIdStr);
+    if (oid != null && oid > 0) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => OrderDetailScreen(orderId: oid)),
+      );
+    }
   }
 
   Widget _withdrawRequestCard(Map<String, dynamic> r, double amount, String date) {
@@ -702,8 +921,11 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
     final paymentMethod = (r['payment_method'] ?? '').toString();
     final reference = (r['transaction_reference'] ?? '').toString();
     final remarks = (r['remarks'] ?? '').toString();
+    final rawNarration = (r['narration'] ?? r['note'] ?? '').toString().trim();
+    final narration = _cleanNarration(rawNarration);
     
-    String displayDate = date;
+    String displayDate = _formatDate(date);
+    if (displayDate.isEmpty) displayDate = date;
     if (status == 'approved' && r['approved_at'] != null && r['approved_at'].toString().isNotEmpty) {
       displayDate = r['approved_at'].toString();
     } else if (status == 'rejected' && r['rejected_at'] != null && r['rejected_at'].toString().isNotEmpty) {
@@ -821,6 +1043,10 @@ class _WalletScreenState extends State<WalletScreen> with TickerProviderStateMix
                   if (remarks.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text('Remarks : $remarks', style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary)),
+                  ],
+                  if (narration.isNotEmpty && narration != remarks) ...[
+                    const SizedBox(height: 4),
+                    Text('Note : $narration', style: AppTextStyles.caption.copyWith(color: AppColors.textPrimary)),
                   ],
                 ],
               ),

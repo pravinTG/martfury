@@ -31,7 +31,7 @@ class CartScreenState extends State<CartScreen> {
     await _loadCart();
   }
 
-  Future<void> _loadCart() async {
+  Future<void> _loadCart({bool isRetry = false}) async {
     setState(() {
       _isLoading = true;
       _error = null;
@@ -47,6 +47,18 @@ class CartScreenState extends State<CartScreen> {
     } catch (e) {
       if (!mounted) return;
       print('💥 Failed to load Cart API: $e');
+
+      // On first failure, do a silent auto-retry after a short delay.
+      // This handles the race condition where the server hasn't yet committed
+      // the Firebase-UID → WP-user mapping right after a fresh login.
+      if (!isRetry) {
+        print('🔄 Auto-retrying cart load in 2 seconds...');
+        await Future.delayed(const Duration(seconds: 2));
+        if (!mounted) return;
+        await _loadCart(isRetry: true);
+        return;
+      }
+
       setState(() {
         _error = 'Failed to load data';
         _isLoading = false;

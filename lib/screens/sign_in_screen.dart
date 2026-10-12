@@ -190,6 +190,29 @@ class _SignInScreenState extends State<SignInScreen> {
     if (apiUserId != null && apiUserId.isNotEmpty) {
       await TokenStorageService.saveUserId(apiUserId);
       debugPrint('OTP_VERIFY: saved API user id=$apiUserId');
+
+      final currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser != null) {
+        try {
+          await _apiService.syncFirebaseUser(
+            userId: int.parse(apiUserId),
+            firebaseUid: currentUser.uid,
+            phoneNumber: currentUser.phoneNumber ?? '',
+          );
+          debugPrint('OTP_VERIFY: syncFirebaseUser called successfully');
+        } catch (e) {
+          debugPrint('OTP_VERIFY: Failed to sync Firebase user: $e');
+        }
+      }
+
+      // ── CRITICAL: Wait for the backend to persist the Firebase-UID → WP-user
+      // mapping before we navigate. Without this delay, the very first getCart()
+      // call in MainNavigationScreen hits the server before the mapping is
+      // committed, resulting in a 401 "User not found for Firebase UID" error
+      // that shows the "Failed to load cart" screen on fresh logins.
+      debugPrint('OTP_VERIFY: waiting for backend sync to propagate...');
+      await Future.delayed(const Duration(milliseconds: 1500));
+      debugPrint('OTP_VERIFY: propagation delay complete, navigating.');
     } else {
       debugPrint('OTP_VERIFY: API user id missing in response. Response was: $response');
     }
